@@ -1,4 +1,4 @@
-{ pkgs ? import (fetchTarball "https://github.com/NixOS/nixpkgs/archive/80c24eeb9ff46aa99617844d0c4168659e35175f.tar.gz") {} }:
+{ pkgs ? import (fetchTarball "https://github.com/NixOS/nixpkgs/tarball/nixos-24.11") {} }:
 let
   python = pkgs.python311;
 in
@@ -17,6 +17,9 @@ pkgs.mkShellNoCC {
       tqdm
       pywayland
       gymnasium
+      torch
+      torchrl
+      tensordict
     ]))
   ];
 }
