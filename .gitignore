@@ -1,2 +1,6 @@
 .envrc
 .direnv/
+*.egg-info
+*.egg
+.pytest_cache/
+__pycache__/
