@@ -10,6 +10,7 @@ from torchrl.data.tensor_specs import (
 )
 from torchrl.envs.common import EnvBase
 from torchrl.envs.utils import make_composite_from_td
+from torchrl.envs.transforms import Transform
 
 class SafeDoubleIntegratorEnv(EnvBase):
     """Stateless environment for discrete double integrator.
@@ -88,7 +89,7 @@ class SafeDoubleIntegratorEnv(EnvBase):
         self.action_spec = BoundedTensorSpec(
             low=-td_params["params", "max_input"],
             high=td_params["params", "max_input"],
-            shape=(),
+            shape=(1,),
             dtype=torch.float32
         )
 #        self.done_spec = CompositeSpec(
@@ -193,3 +194,20 @@ class SafeDoubleIntegratorEnv(EnvBase):
     @classmethod
     def constraints_satisfied(cls, x1:torch.Tensor, x2:torch.Tensor)->torch.Tensor:
         return (x1 >= -1) & (x1 <= 1) & (x2 >= -1) & (x2 <= 1)
+
+class MergeFieldsTransform(Transform):
+    def __init__(self,in_keys,out_keys):
+        if isinstance(out_keys,str):
+            out_keys = [out_keys]
+        assert len(out_keys) == 1
+        super().__init__(in_keys,out_keys)
+    def __call__(self, td:TensorDict):
+        merged_values = [td.get(key,default=None).clone() for key in self.in_keys]
+
+        if all(isinstance(value,torch.Tensor) for value in merged_values):
+            merged_values = torch.cat(merged_values,dim=-1)
+        td.set(self.out_keys[0],merged_values)
+        for key in self.in_keys:
+            if key in td:
+                del td[key]
+        return td
