@@ -4,3 +4,4 @@
 *.egg
 .pytest_cache/
 __pycache__/
+models/*
