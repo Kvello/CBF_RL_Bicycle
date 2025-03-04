@@ -112,14 +112,15 @@ if __name__ == "__main__":
     env = TransformedEnv(
         base_env,
         Compose(
-            BatchSizeTransform([batches_per_process]),
             UnsqueezeTransform(in_keys=["x1", "x2"], dim=-1,in_keys_inv=["x1","x2"]),
             CatTensors(in_keys =["x1", "x2"], out_key= "obs",del_keys=False,dim=-1),
             ObservationNorm(in_keys=["obs"], out_keys=["obs"]),
+            BatchSizeTransform(batch_size=[batches_per_process]),
             DoubleToFloat(),
             StepCounter(max_steps=max_rollout_len),
         )
     )
+    env.transform[2].init_stats(num_iter=1000,reduce_dim=0,cat_dim=0)
     gamma = 0.97
 
     # Handle both batch-locked and unbatched action specs
@@ -132,7 +133,6 @@ if __name__ == "__main__":
 
     action_size_unbatched = (env.action_size_unbatched if hasattr(env, "action_size_unbatched") 
                                                         else env.action_spec.shape[0])
-    env.transform[2].init_stats(num_iter=1000,reduce_dim=0,cat_dim=0)
     actor_net = nn.Sequential(
         nn.Linear(observation_size_unbatched, num_cells,device=device),
         nn.Tanh(),
@@ -175,7 +175,7 @@ if __name__ == "__main__":
 
     if args.train:
         # Training
-        env_creator = EnvCreator(create_batched_env(batch_size=batches_per_process, env=env))
+        env_creator = EnvCreator(lambda: env)
         create_env_fn = [env_creator for _ in range(num_workers)]
         collector = MultiSyncDataCollector(
             create_env_fn=create_env_fn,
@@ -184,7 +184,8 @@ if __name__ == "__main__":
             total_frames=total_frames,
             split_trajs=False,
             device=device,
-            exploration_type=ExplorationType.RANDOM)
+            exploration_type=ExplorationType.RANDOM,
+            cat_results="stack")
 
         replay_buffer = ReplayBuffer(
             storage=LazyTensorStorage(max_size=frames_per_batch),
@@ -284,7 +285,11 @@ if __name__ == "__main__":
             + datetime.now().strftime("%Y%m%d-%H%M%S") + ".pth")
     if args.plot_value:
         print("Plotting value function")
-        plot_value_function_integrator(max_x1, max_x2, 10, value_module)
+        value_function_resolution = 10
+        plot_value_function_integrator(max_x1, 
+                                       max_x2,
+                                       value_function_resolution,
+                                       value_module)
     if args.plot_training:
         # Plot training statistics
         print("Plotting training statistics")
