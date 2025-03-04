@@ -23,6 +23,7 @@ pkgs.mkShellNoCC {
       pytest
       ipykernel
       pip
+      wandb
     ]))
   ];
   shellHook = ''
