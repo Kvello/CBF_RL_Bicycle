@@ -1,4 +1,5 @@
 import torch
+from torch import nn
 import numpy as np
 from typing import Union, Optional, List
 from tensordict import TensorDict, TensorDictBase
@@ -11,6 +12,10 @@ from torchrl.data.tensor_specs import (
 from torchrl.envs.common import EnvBase
 from torchrl.envs.utils import make_composite_from_td
 from torchrl.envs.transforms import Transform
+from matplotlib import pyplot as plt
+from matplotlib.ticker import MaxNLocator
+from math import ceil
+from datetime import datetime
 
 class SafeDoubleIntegratorEnv(EnvBase):
     """Stateless environment for discrete double integrator.
@@ -198,3 +203,91 @@ class SafeDoubleIntegratorEnv(EnvBase):
     @property
     def obs_size_unbatched(self):
         return 2
+
+        
+
+def plot_integrator_trajectories(env, 
+                                 policy_module, 
+                                 rollout_len:int, 
+                                 num_trajectories:int,
+                                 max_x1:float,
+                                 max_x2:float):
+    """Plots the trajectories of the agent in the environment.
+
+    Args:
+        env (_type_): _description_
+        policy_module (_type_): _description_
+        rollout_len (int): _description_
+        num_trajectories (int): _description_
+    """
+    params = env.gen_params([num_trajectories])
+    params["step_count"] = torch.zeros((num_trajectories,1))
+    td: TensorDict = env.reset(params)
+    rollouts =  env.rollout(rollout_len, 
+                            policy_module, 
+                            tensordict = td,
+                            auto_reset=False,
+                            break_when_any_done=False)
+    fig = plt.figure()
+    for i in range(num_trajectories):
+        traj_length = torch.where(rollouts["next","done"][i])[0][0]
+        traj_x = rollouts["x1"][i].cpu().detach().numpy()[0:traj_length]
+        traj_y = rollouts["x2"][i].cpu().detach().numpy()[0:traj_length]
+        plt.plot(traj_x, traj_y)
+        plt.plot(traj_x[0], traj_y[0], 'og')
+        if traj_length < rollout_len-1:
+            print("Trajectory ended early at ", traj_length)
+            plt.plot(traj_x[-1], traj_y[-1], 'xr')
+    plt.plot([-max_x1, -max_x1], [-max_x2, max_x2], "r")
+    plt.plot([max_x1, max_x1], [-max_x2, max_x2], "r")
+    plt.plot([-max_x1, max_x1], [-max_x2, -max_x2], "r")
+    plt.plot([-max_x1, max_x1], [max_x2, max_x2], "r")
+    plt.xlabel("x1")
+    plt.ylabel("x2")
+    plt.title("Trajectories of the agent")
+    plt.xlim(-max_x1*1.1, max_x1*1.1)
+    plt.ylim(-max_x2*1.1, max_x2*1.1)
+    plt.savefig("integrator_trajectories" + datetime.now().strftime("%Y%m%d-%H%M%S") + ".pdf")
+def plot_value_function_integrator(max_x1:float, max_x2:float,
+                                resolution:int, 
+                                value_net:nn.Module,
+                                levels:List[float] = [0.0]):
+    """Plots the value function landscape across the state space.
+    Current implementation only supports 2D state spaces.
+    Args:
+        state_space dict: A dictionary containing a representation of the state space over
+            which the value function should be evaluated. The dictionary should contain
+            the keys "low" and "high" for each state "state_name"
+            which represent the lower and upper bounds of the
+            state space respectively. E.g state_space = {"state_name": {"low": -1, "high": 1}}
+        value_module nn.Module: The value function module.
+        resolution (int): The resolution of the grid over which 
+        the value function should be evaluated. Number of points per unit.
+    """
+    x1_low = -max_x1*1.1
+    x1_high = max_x1*1.1
+    x2_low = -max_x2*1.1
+    x2_high = max_x2*1.1
+    linspace_x1 = torch.linspace(x1_low, x1_high, ceil(resolution*(x1_high-x1_low)))
+    linspace_x2 = torch.linspace(x2_low, x2_high, ceil(resolution*(x2_high-x2_low)))
+    linspaces = [linspace_x1, linspace_x2]
+    mesh = torch.meshgrid(*linspaces,indexing="xy")
+    inputs = torch.stack([m.flatten() for m in mesh],dim=-1)
+    outputs = value_net(inputs).detach().cpu().numpy()
+    fig = plt.figure()
+
+    locator = MaxNLocator(nbins=10)
+    levels_locator = locator.tick_values(outputs.min(), outputs.max())
+    plt.contour(mesh[0],mesh[1],outputs.reshape(mesh[0].shape),levels=levels,colors="black")
+    plt.contourf(mesh[0],mesh[1],outputs.reshape(mesh[0].shape),levels=levels_locator)
+    plt.plot([-max_x1, -max_x1], [-max_x2, max_x2], "r")
+    plt.plot([max_x1, max_x1], [-max_x2, max_x2], "r")
+    plt.plot([-max_x1, max_x1], [-max_x2, -max_x2], "r")
+    plt.plot([-max_x1, max_x1], [max_x2, max_x2], "r")
+    plt.xlim(-max_x1*1.1, max_x1*1.1)
+    plt.ylim(-max_x2*1.1, max_x2*1.1)
+    plt.xlabel("x1")
+    plt.ylabel("x2")
+    plt.title("Value function landscape")
+    plt.colorbar()
+    plt.savefig("value_function_landscape" + datetime.now().strftime("%Y%m%d-%H%M%S") + ".pdf")
