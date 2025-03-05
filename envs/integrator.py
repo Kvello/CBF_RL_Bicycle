@@ -9,6 +9,12 @@ from torchrl.data.tensor_specs import (
     UnboundedContinuousTensorSpec, 
     DiscreteTensorSpec
 )
+from torchrl.envs import (
+    EnvBase,
+    Compose,
+    TransformedEnv,
+    
+)
 from torchrl.envs.common import EnvBase
 from torchrl.envs.utils import make_composite_from_td
 from torchrl.envs.transforms import Transform
@@ -220,24 +226,26 @@ def plot_integrator_trajectories(env,
         rollout_len (int): _description_
         num_trajectories (int): _description_
     """
-    params = env.gen_params([num_trajectories])
-    params["step_count"] = torch.zeros((num_trajectories,1))
-    td: TensorDict = env.reset(params)
-    rollouts =  env.rollout(rollout_len, 
-                            policy_module, 
-                            tensordict = td,
-                            auto_reset=False,
-                            break_when_any_done=False)
+
     fig = plt.figure()
-    for i in range(num_trajectories):
-        traj_length = torch.where(rollouts["next","done"][i])[0][0]
-        traj_x = rollouts["x1"][i].cpu().detach().numpy()[0:traj_length]
-        traj_y = rollouts["x2"][i].cpu().detach().numpy()[0:traj_length]
-        plt.plot(traj_x, traj_y)
-        plt.plot(traj_x[0], traj_y[0], 'og')
-        if traj_length < rollout_len-1:
-            print("Trajectory ended early at ", traj_length)
-            plt.plot(traj_x[-1], traj_y[-1], 'xr')
+    i=0
+    print(f"Generating {num_trajectories} trajectories")
+    while i < num_trajectories:
+        rollouts =  env.rollout(rollout_len, 
+                                policy_module, 
+                                auto_reset=True,
+                                break_when_any_done=False)
+        j = rollouts.shape[0]
+        num_left = num_trajectories - i
+        i += j
+        for k in range(min(j,num_left)):
+            traj_length = torch.where(rollouts["next","done"][k])[0][0]
+            traj_x = rollouts["x1"][k].cpu().detach().numpy()[0:traj_length]
+            traj_y = rollouts["x2"][k].cpu().detach().numpy()[0:traj_length]
+            plt.plot(traj_x, traj_y)
+            plt.plot(traj_x[0], traj_y[0], 'og')
+            if traj_length < rollout_len-1:
+                plt.plot(traj_x[-1], traj_y[-1], 'xr')
     plt.plot([-max_x1, -max_x1], [-max_x2, max_x2], "r")
     plt.plot([max_x1, max_x1], [-max_x2, max_x2], "r")
     plt.plot([-max_x1, max_x1], [-max_x2, -max_x2], "r")
