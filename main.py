@@ -80,6 +80,15 @@ def parse_args():
     parser.add_argument("--max_rollout_len", type=int, default=100, help="Maximum rollout length")
     return parser.parse_args()
     
+def reset_batched_env(td, td_reset, env):
+    """Reset a batched environment.
+    """
+    td = env.gen_params([*env.batch_size])
+    td_new = env.base_env.reset(td)
+    if not td_new["x1"].shape == env.batch_size:
+        print(td.shape)
+        print(td)
+    return td_new
 if __name__ == "__main__":
     args = parse_args() 
     #######################
@@ -93,9 +102,9 @@ if __name__ == "__main__":
     frames_per_batch = int(2**12)
     lr = 3e-4
     max_grad_norm = 1.0
-    total_frames = int(2**22)
+    total_frames = int(2**12)
     batches_per_process = 16
-    num_workers = 8
+    num_workers = 1
     sub_batch_size = 64  # cardinality of the sub-samples gathered from the current data in the inner loop
     num_epochs = 10  # optimization steps per batch of data collected
     clip_epsilon = (
@@ -108,19 +117,20 @@ if __name__ == "__main__":
     #######################
     max_rollout_len = args.max_rollout_len
     base_env = SafeDoubleIntegratorEnv(device=device)
-    base_env
     env = TransformedEnv(
         base_env,
         Compose(
+            BatchSizeTransform(batch_size=[batches_per_process],
+                               reset_func=reset_batched_env,
+                               env_kwarg=True),
             UnsqueezeTransform(in_keys=["x1", "x2"], dim=-1,in_keys_inv=["x1","x2"]),
             CatTensors(in_keys =["x1", "x2"], out_key= "obs",del_keys=False,dim=-1),
             ObservationNorm(in_keys=["obs"], out_keys=["obs"]),
-            BatchSizeTransform(batch_size=[batches_per_process]),
             DoubleToFloat(),
             StepCounter(max_steps=max_rollout_len),
         )
     )
-    env.transform[2].init_stats(num_iter=1000,reduce_dim=0,cat_dim=0)
+    env.transform[3].init_stats(num_iter=1000,reduce_dim=(0,1),cat_dim=1)
     gamma = 0.97
 
     # Handle both batch-locked and unbatched action specs
@@ -185,7 +195,7 @@ if __name__ == "__main__":
             split_trajs=False,
             device=device,
             exploration_type=ExplorationType.RANDOM,
-            cat_results="stack")
+            cat_results=0)
 
         replay_buffer = ReplayBuffer(
             storage=LazyTensorStorage(max_size=frames_per_batch),
@@ -255,7 +265,7 @@ if __name__ == "__main__":
             logs["step_count"].append(tensordict_data["step_count"].max().item())
             stepcount_str = f"step count (max): {logs['step_count'][-1]}"
             logs["lr"].append(optim.param_groups[0]["lr"])
-            lr_str = f"lr policy: {logs['lr'][-1]: 4.4f}"
+            lr_str = f"lr policy: {logs['lr'][-1]: 4.6f}"
             if i % 10 == 0 and args.eval:
                 eval_logs, eval_str = evaluate_policy(env, policy_module, max_rollout_len)
                 for key, val in eval_logs.items():
@@ -264,18 +274,6 @@ if __name__ == "__main__":
             # this is a nice-to-have but nothing necessary for PPO to work.
             pbar.set_description(", ".join([eval_str, cum_reward_str, stepcount_str, lr_str]))
             scheduler.step()
-    if args.eval:
-        print("Evaluation")
-        eval_logs, eval_str = evaluate_policy(env, policy_module, max_rollout_len)
-        print(eval_str)
-    if args.plot_traj > 0:
-        print("Plotted trajectories")
-        plot_integrator_trajectories(env, 
-                                    policy_module,
-                                    max_rollout_len,
-                                    args.plot_traj,
-                                    max_x1,
-                                    max_x2)
     if args.save:
         print("Saving")
         # Save the model
@@ -283,6 +281,18 @@ if __name__ == "__main__":
             + datetime.now().strftime("%Y%m%d-%H%M%S") + ".pth")
         torch.save(value_module.state_dict(), "models/ppo_value_safe_integrator" \
             + datetime.now().strftime("%Y%m%d-%H%M%S") + ".pth")
+    if args.eval:
+        print("Evaluation")
+        eval_logs, eval_str = evaluate_policy(env, policy_module, max_rollout_len)
+        print(eval_str)
+    if args.plot_traj > 0:
+        plot_integrator_trajectories(env, 
+                                    policy_module,
+                                    max_rollout_len,
+                                    args.plot_traj,
+                                    max_x1,
+                                    max_x2)
+        print("Plotted trajectories")
     if args.plot_value:
         print("Plotting value function")
         value_function_resolution = 10
