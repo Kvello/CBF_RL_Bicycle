@@ -43,7 +43,18 @@ class SafeDoubleIntegratorEnv(EnvBase):
     def __init__(self, td_params=None, seed=None, device=None):
         self.device = device
         if td_params is None:
-            td_params = self.gen_params(device=self.device)
+            td_params = TensorDict({
+            "params": TensorDict({
+                "dt": 0.01,
+                "max_input": 1.0,
+                "max_x1": 1.0,
+                "max_x2": 1.0,
+                    },[],
+                )
+            },
+            [],device=device,
+            )
+        self._params = td_params
         super().__init__(device=self.device)
         self._make_spec(td_params)
         if seed is None:
@@ -53,8 +64,7 @@ class SafeDoubleIntegratorEnv(EnvBase):
     def _set_seed(self, seed: Optional[int]):
         rng = torch.manual_seed(seed)
         self.rng = rng
-    @staticmethod
-    def gen_params(batch_size:Optional[List[int]]=None, device=None)->TensorDictBase:
+    def gen_params(self,batch_size:Optional[List[int]]=None, device=None)->TensorDictBase:
         """Returns a TensorDict with the parameters of the environment
 
         Args:
@@ -66,17 +76,8 @@ class SafeDoubleIntegratorEnv(EnvBase):
         """
         if batch_size is None:
             batch_size = []
-        td = TensorDict({
-            "params": TensorDict({
-                "dt": 0.01,
-                "max_input": 1.0,
-                "max_x1": 1.0,
-                "max_x2": 1.0,
-                },[],
-            )
-        },
-        [],device=device,
-        )
+        td = self._params.clone()
+        td.to(device)
         if batch_size:
             td = td.expand(batch_size).contiguous()
         return td
