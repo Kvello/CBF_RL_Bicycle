@@ -5,6 +5,7 @@ from typing import List
 from tensordict.nn import TensorDictModule
 from torch import nn
 from tensordict.nn.distributions import NormalParamExtractor
+from tensordict import TensorDict, TensorDictBase
 from torchrl.collectors import MultiSyncDataCollector, SyncDataCollector
 from torchrl.data.replay_buffers import ReplayBuffer
 from torchrl.data.replay_buffers.samplers import SamplerWithoutReplacement
@@ -32,6 +33,7 @@ from envs.integrator import SafeDoubleIntegratorEnv, plot_integrator_trajectorie
 from datetime import datetime
 import argparse
 from results.evaluate import evaluate_policy
+import wandb
 
 class SafetyValueFunction(nn.Module):
     """
@@ -78,6 +80,8 @@ def parse_args():
     parser.add_argument("--plot_value", action="store_true", default=False, help="Plot the value function landscape")
     parser.add_argument("--plot_training", action="store_true", default=False, help="Plot training statistics")
     parser.add_argument("--max_rollout_len", type=int, default=100, help="Maximum rollout length")
+    parser.add_argument("--track", action="store_true", default=False, help="Track the training with wandb")
+    parser.add_argument("--wandb_project", type=str, default="ppo_safe_integrator", help="Wandb project name")
     return parser.parse_args()
     
 def reset_batched_env(td, td_reset, env):
@@ -91,6 +95,12 @@ def reset_batched_env(td, td_reset, env):
     return td_new
 if __name__ == "__main__":
     args = parse_args() 
+    if args.track:
+        wandb.init(project=args.wandb_project,
+                   sync_tensorboard=True,
+                   monitor_gym=True,
+                   save_code=True)
+
     #######################
     # Hyperparameters:
     #######################
@@ -98,13 +108,13 @@ if __name__ == "__main__":
     max_input = 1.0
     max_x1 = 1.0
     max_x2 = 1.0
-    dt = 0.01
+    dt = 0.1
     frames_per_batch = int(2**12)
     lr = 3e-4
     max_grad_norm = 1.0
-    total_frames = int(2**12)
+    total_frames = int(2**14)
     batches_per_process = 16
-    num_workers = 1
+    num_workers = 8
     sub_batch_size = 64  # cardinality of the sub-samples gathered from the current data in the inner loop
     num_epochs = 10  # optimization steps per batch of data collected
     clip_epsilon = (
@@ -116,7 +126,17 @@ if __name__ == "__main__":
     # Environment:
     #######################
     max_rollout_len = args.max_rollout_len
-    base_env = SafeDoubleIntegratorEnv(device=device)
+    parameters = TensorDict({
+        "params" : TensorDict({
+            "dt": dt,
+            "max_x1": max_x1,
+            "max_x2": max_x2,
+            "max_input": max_input,
+        },[],
+        device=device)
+        },[],device=device)
+        
+    base_env = SafeDoubleIntegratorEnv(device=device,td_params=parameters)
     env = TransformedEnv(
         base_env,
         Compose(
@@ -143,6 +163,10 @@ if __name__ == "__main__":
 
     action_size_unbatched = (env.action_size_unbatched if hasattr(env, "action_size_unbatched") 
                                                         else env.action_spec.shape[0])
+    
+    #######################
+    # Models:
+    #######################
     actor_net = nn.Sequential(
         nn.Linear(observation_size_unbatched, num_cells,device=device),
         nn.Tanh(),
@@ -183,8 +207,11 @@ if __name__ == "__main__":
         print("Value function loaded") 
 
 
+    #######################
+    # Training:
+    #######################
+
     if args.train:
-        # Training
         env_creator = EnvCreator(lambda: env)
         create_env_fn = [env_creator for _ in range(num_workers)]
         collector = MultiSyncDataCollector(
@@ -222,21 +249,18 @@ if __name__ == "__main__":
 
         optim = torch.optim.Adam(loss_module.parameters(), lr)
         scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-            optim, total_frames // frames_per_batch, 0.0
+            optim, total_frames // frames_per_batch, 1e-8
         )
         print("Training")
         logs = defaultdict(list)
         pbar = tqdm(total=total_frames)
         eval_str = ""
 
-        # We iterate over the collector until it reaches the total number of frames it was
-        # designed to collect:
         for i, tensordict_data in enumerate(collector):
-            # we now have a batch of data to work with. Let's learn something from it.
+            logs["loss_objective"] = 0.0
+            logs["loss_critic"] = 0.0
+            logs["loss_entropy"] = 0.0
             for _ in range(num_epochs):
-                # We'll need an "advantage" signal to make PPO work.
-                # We re-compute it at each epoch as its value depends on the value
-                # network which is updated in the inner loop.
                 advantage_module(tensordict_data)
                 data_view = tensordict_data.reshape(-1)
                 replay_buffer.extend(data_view.cpu())
@@ -248,32 +272,41 @@ if __name__ == "__main__":
                         + loss_vals["loss_critic"]
                         + loss_vals["loss_entropy"]
                     )
-
-                    # Optimization: backward, grad clipping and optimization step
+                    logs["loss_objective"] += loss_vals["loss_objective"].item()
+                    logs["loss_critic"] += loss_vals["loss_critic"].item()
+                    logs["loss_entropy"] += loss_vals["loss_entropy"].item()
+                    
                     loss_value.backward()
                     # this is not strictly mandatory but it's good practice to keep
                     # your gradient norm bounded
                     torch.nn.utils.clip_grad_norm_(loss_module.parameters(), max_grad_norm)
                     optim.step()
                     optim.zero_grad()
-
-            logs["reward"].append(tensordict_data["next", "reward"].mean().item())
+            logs["loss_objective"] /= num_epochs
+            logs["loss_critic"] /= num_epochs
+            logs["loss_entropy"] /= num_epochs
+            logs["reward"] = tensordict_data["next", "reward"].mean().item()
             pbar.update(tensordict_data.numel())
             cum_reward_str = (
-                f"average reward={logs['reward'][-1]: 4.4f} (init={logs['reward'][0]: 4.4f})"
+                f"average reward={logs['reward']: 4.4f}"
             )
-            logs["step_count"].append(tensordict_data["step_count"].max().item())
-            stepcount_str = f"step count (max): {logs['step_count'][-1]}"
-            logs["lr"].append(optim.param_groups[0]["lr"])
-            lr_str = f"lr policy: {logs['lr'][-1]: 4.6f}"
+            logs["step_count"] = tensordict_data["step_count"].max().item()
+            stepcount_str = f"step count (max): {logs['step_count']}"
+            logs["lr"] = optim.param_groups[0]["lr"]
+            lr_str = f"lr policy: {logs['lr']: 4.6f}"
             if i % 10 == 0 and args.eval:
                 eval_logs, eval_str = evaluate_policy(env, policy_module, max_rollout_len)
                 for key, val in eval_logs.items():
                     logs[key].append(val)
-            # We're also using a learning rate scheduler. Like the gradient clipping,
-            # this is a nice-to-have but nothing necessary for PPO to work.
-            pbar.set_description(", ".join([eval_str, cum_reward_str, stepcount_str, lr_str]))
+            if args.wandb:
+                wandb.log({**logs},step = i*frames_per_batch)
+            else:
+                pbar.set_description(", ".join([eval_str, cum_reward_str, stepcount_str, lr_str]))
             scheduler.step()
+    
+    #######################
+    # Evaluation:
+    #######################
     if args.save:
         print("Saving")
         # Save the model
