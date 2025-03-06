@@ -298,7 +298,7 @@ if __name__ == "__main__":
                 eval_logs, eval_str = evaluate_policy(env, policy_module, max_rollout_len)
                 for key, val in eval_logs.items():
                     logs[key].append(val)
-            if args.wandb:
+            if args.track:
                 wandb.log({**logs},step = i*frames_per_batch)
             else:
                 pbar.set_description(", ".join([eval_str, cum_reward_str, stepcount_str, lr_str]))
@@ -349,7 +349,7 @@ if __name__ == "__main__":
         plt.subplot(2, 2, 4)
         plt.plot(logs["eval step_count"])
         plt.title("Max step count (test)")
-        plt.savefig("ppo_safe_integrator_statistics.png")
+        plt.savefig("results/ppo_safe_integrator_statistics.png")
 
     # # Plot value-function landscape
     # plt.figure(figsize=(10, 10))
