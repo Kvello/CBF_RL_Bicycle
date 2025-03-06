@@ -240,13 +240,15 @@ def plot_integrator_trajectories(env,
         num_left = num_trajectories - i
         i += j
         for k in range(min(j,num_left)):
-            traj_length = torch.where(rollouts["next","done"][k])[0][0]
+            traj_length = torch.where(rollouts["next","done"][k])[0][0] + 1
             traj_x = rollouts["x1"][k].cpu().detach().numpy()[0:traj_length]
             traj_y = rollouts["x2"][k].cpu().detach().numpy()[0:traj_length]
             plt.plot(traj_x, traj_y)
             plt.plot(traj_x[0], traj_y[0], 'og')
             if traj_length < rollout_len-1:
                 plt.plot(traj_x[-1], traj_y[-1], 'xr')
+                print(f"Trajectory {k} terminated early"+\
+                    f"at point {traj_length} with state {traj_x[-1], traj_y[-1]}")
     plt.plot([-max_x1, -max_x1], [-max_x2, max_x2], "r")
     plt.plot([max_x1, max_x1], [-max_x2, max_x2], "r")
     plt.plot([-max_x1, max_x1], [-max_x2, -max_x2], "r")
@@ -256,7 +258,7 @@ def plot_integrator_trajectories(env,
     plt.title("Trajectories of the agent")
     plt.xlim(-max_x1*1.1, max_x1*1.1)
     plt.ylim(-max_x2*1.1, max_x2*1.1)
-    plt.savefig("integrator_trajectories" + datetime.now().strftime("%Y%m%d-%H%M%S") + ".pdf")
+    plt.savefig("results/integrator_trajectories" + datetime.now().strftime("%Y%m%d-%H%M%S") + ".pdf")
 def plot_value_function_integrator(max_x1:float, max_x2:float,
                                 resolution:int, 
                                 value_net:nn.Module,
@@ -299,4 +301,4 @@ def plot_value_function_integrator(max_x1:float, max_x2:float,
     plt.ylabel("x2")
     plt.title("Value function landscape")
     plt.colorbar()
-    plt.savefig("value_function_landscape" + datetime.now().strftime("%Y%m%d-%H%M%S") + ".pdf")
+    plt.savefig("results/value_function_landscape" + datetime.now().strftime("%Y%m%d-%H%M%S") + ".pdf")
