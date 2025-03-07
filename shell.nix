@@ -20,6 +20,14 @@ pkgs.mkShellNoCC {
       torch
       torchrl
       tensordict
+      pytest
+      ipykernel
+      pip
+      wandb
     ]))
   ];
+  shellHook = ''
+    export PYTHONPATH=$PWD
+    echo "Python environment ready. Run 'pytest tests/'"
+  '';
 }
