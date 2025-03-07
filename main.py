@@ -82,6 +82,7 @@ def parse_args():
     parser.add_argument("--max_rollout_len", type=int, default=100, help="Maximum rollout length")
     parser.add_argument("--track", action="store_true", default=False, help="Track the training with wandb")
     parser.add_argument("--wandb_project", type=str, default="ppo_safe_integrator", help="Wandb project name")
+    parser.add_argument("--experiment_name", type=str, default=None, help="Wandb experiment name")
     return parser.parse_args()
     
 def reset_batched_env(td, td_reset, env):
@@ -99,7 +100,8 @@ if __name__ == "__main__":
         wandb.init(project=args.wandb_project,
                    sync_tensorboard=True,
                    monitor_gym=True,
-                   save_code=True)
+                   save_code=True,
+                   name=args.experiment_name)
 
     #######################
     # Hyperparameters:
@@ -108,20 +110,20 @@ if __name__ == "__main__":
     max_input = 1.0
     max_x1 = 1.0
     max_x2 = 1.0
-    dt = 0.1
-    frames_per_batch = int(2**12)
-    lr = 3e-4
+    dt = 0.05
+    frames_per_batch = int(2**16)
+    lr = 1e-3
     max_grad_norm = 1.0
-    total_frames = int(2**14)
+    total_frames = int(2**21)
     batches_per_process = 16
     num_workers = 8
     sub_batch_size = 64  # cardinality of the sub-samples gathered from the current data in the inner loop
-    num_epochs = 10  # optimization steps per batch of data collected
+    num_epochs = 64  # optimization steps per batch of data collected
     clip_epsilon = (
         0.2  # clip value for PPO loss: see the equation in the intro for more context.
     )
     lmbda = 0.95
-    entropy_eps = 1e-4
+    entropy_eps = 0.0
     #######################
     # Environment:
     #######################
@@ -169,10 +171,6 @@ if __name__ == "__main__":
     #######################
     actor_net = nn.Sequential(
         nn.Linear(observation_size_unbatched, num_cells,device=device),
-        nn.Tanh(),
-        nn.Linear(num_cells, num_cells,device=device),
-        nn.Tanh(),
-        nn.Linear(num_cells, num_cells,device=device),
         nn.Tanh(),
         nn.Linear(num_cells,2 * env.action_spec.shape[-1], device=device),
         NormalParamExtractor(),
@@ -267,6 +265,8 @@ if __name__ == "__main__":
                 for _ in range(frames_per_batch // sub_batch_size):
                     subdata = replay_buffer.sample(sub_batch_size)
                     loss_vals = loss_module(subdata.to(device))
+                    if entropy_eps == 0.0:
+                        loss_vals["loss_entropy"] = torch.tensor(0.0)
                     loss_value = (
                         loss_vals["loss_objective"]
                         + loss_vals["loss_critic"]
@@ -299,11 +299,12 @@ if __name__ == "__main__":
                 for key, val in eval_logs.items():
                     logs[key].append(val)
             if args.track:
-                wandb.log({**logs},step = i*frames_per_batch)
+                wandb.log({**logs})
             else:
                 pbar.set_description(", ".join([eval_str, cum_reward_str, stepcount_str, lr_str]))
             scheduler.step()
-    
+    wandb.finish() 
+    collector.shutdown()
     #######################
     # Evaluation:
     #######################
@@ -318,21 +319,24 @@ if __name__ == "__main__":
         print("Evaluation")
         eval_logs, eval_str = evaluate_policy(env, policy_module, max_rollout_len)
         print(eval_str)
+    if args.plot_value and args.plot_traj > 0:
+        print("Plotting value function")
+        value_function_resolution = 10
+        value_landscape = plot_value_function_integrator(max_x1, 
+                                       max_x2,
+                                       value_function_resolution,
+                                       value_module)
+    else:
+        value_landscape = None
     if args.plot_traj > 0:
         plot_integrator_trajectories(env, 
                                     policy_module,
                                     max_rollout_len,
                                     args.plot_traj,
                                     max_x1,
-                                    max_x2)
+                                    max_x2,
+                                    value_landscape)
         print("Plotted trajectories")
-    if args.plot_value:
-        print("Plotting value function")
-        value_function_resolution = 10
-        plot_value_function_integrator(max_x1, 
-                                       max_x2,
-                                       value_function_resolution,
-                                       value_module)
     if args.plot_training:
         # Plot training statistics
         print("Plotting training statistics")
