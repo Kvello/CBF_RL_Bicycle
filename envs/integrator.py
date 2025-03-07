@@ -212,13 +212,22 @@ class SafeDoubleIntegratorEnv(EnvBase):
         return 2
 
         
+# TODO:
+# Implement the plotting functionality in a cleaner way
+# Especially the plotting of trajectories ontop of the value function landscape
+# Passing the value function as an argument is not ideal. Maybe passing the image 
+# of the value function landscape would be better
+# or maybe some other design choice would be better.
+# The key is that the plotting funcitons should be separate from each other, but can
+# be called in sequence to generate the desired plots
 
 def plot_integrator_trajectories(env, 
                                  policy_module, 
                                  rollout_len:int, 
                                  num_trajectories:int,
                                  max_x1:float,
-                                 max_x2:float):
+                                 max_x2:float,
+                                 value_landscape:Optional[np.ndarray]=None):
     """Plots the trajectories of the agent in the environment.
 
     Args:
@@ -247,8 +256,6 @@ def plot_integrator_trajectories(env,
             plt.plot(traj_x[0], traj_y[0], 'og')
             if traj_length < rollout_len-1:
                 plt.plot(traj_x[-1], traj_y[-1], 'xr')
-                print(f"Trajectory {k} terminated early"+\
-                    f"at point {traj_length} with state {traj_x[-1], traj_y[-1]}")
     plt.plot([-max_x1, -max_x1], [-max_x2, max_x2], "r")
     plt.plot([max_x1, max_x1], [-max_x2, max_x2], "r")
     plt.plot([-max_x1, max_x1], [-max_x2, -max_x2], "r")
@@ -258,11 +265,21 @@ def plot_integrator_trajectories(env,
     plt.title("Trajectories of the agent")
     plt.xlim(-max_x1*1.1, max_x1*1.1)
     plt.ylim(-max_x2*1.1, max_x2*1.1)
+    if value_landscape is not None:
+        levels = [0.0]
+        x_vals = np.linspace(-max_x1*1.1, max_x1*1.1, value_landscape.shape[0])
+        y_vals = np.linspace(-max_x2*1.1, max_x2*1.1, value_landscape.shape[1])
+        mesh = np.meshgrid(x_vals, y_vals)
+        locator = MaxNLocator(nbins=10)
+        levels_locator = locator.tick_values(value_landscape.min(), value_landscape.max())
+        plt.contour(mesh[0],mesh[1],value_landscape,levels=levels,colors="black")
+        plt.contourf(mesh[0],mesh[1],value_landscape,levels=levels_locator)
+        plt.colorbar()
     plt.savefig("results/integrator_trajectories" + datetime.now().strftime("%Y%m%d-%H%M%S") + ".pdf")
 def plot_value_function_integrator(max_x1:float, max_x2:float,
                                 resolution:int, 
                                 value_net:nn.Module,
-                                levels:List[float] = [0.0]):
+                                levels:List[float] = [0.0])->np.ndarray:
     """Plots the value function landscape across the state space.
     Current implementation only supports 2D state spaces.
     Args:
@@ -274,6 +291,8 @@ def plot_value_function_integrator(max_x1:float, max_x2:float,
         value_module nn.Module: The value function module.
         resolution (int): The resolution of the grid over which 
         the value function should be evaluated. Number of points per unit.
+    Returns:
+        np.ndarray: The value function values evaluated over the state space.
     """
     x1_low = -max_x1*1.1
     x1_high = max_x1*1.1
@@ -285,12 +304,13 @@ def plot_value_function_integrator(max_x1:float, max_x2:float,
     mesh = torch.meshgrid(*linspaces,indexing="xy")
     inputs = torch.stack([m.flatten() for m in mesh],dim=-1)
     outputs = value_net(inputs).detach().cpu().numpy()
+    outputs = outputs.reshape(mesh[0].shape)
     fig = plt.figure()
 
     locator = MaxNLocator(nbins=10)
     levels_locator = locator.tick_values(outputs.min(), outputs.max())
-    plt.contour(mesh[0],mesh[1],outputs.reshape(mesh[0].shape),levels=levels,colors="black")
-    plt.contourf(mesh[0],mesh[1],outputs.reshape(mesh[0].shape),levels=levels_locator)
+    plt.contour(mesh[0],mesh[1],outputs,levels=levels,colors="black")
+    plt.contourf(mesh[0],mesh[1],outputs,levels=levels_locator)
     plt.plot([-max_x1, -max_x1], [-max_x2, max_x2], "r")
     plt.plot([max_x1, max_x1], [-max_x2, max_x2], "r")
     plt.plot([-max_x1, max_x1], [-max_x2, -max_x2], "r")
@@ -302,3 +322,4 @@ def plot_value_function_integrator(max_x1:float, max_x2:float,
     plt.title("Value function landscape")
     plt.colorbar()
     plt.savefig("results/value_function_landscape" + datetime.now().strftime("%Y%m%d-%H%M%S") + ".pdf")
+    return outputs
