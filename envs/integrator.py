@@ -273,7 +273,7 @@ def plot_integrator_trajectories(env,
         locator = MaxNLocator(nbins=10)
         levels_locator = locator.tick_values(value_landscape.min(), value_landscape.max())
         plt.contour(mesh[0],mesh[1],value_landscape,levels=levels,colors="black")
-        plt.contourf(mesh[0],mesh[1],value_landscape,levels=levels_locator)
+        plt.contourf(mesh[0],mesh[1],value_landscape,levels=levels_locator,cmap='coolwarm')
         plt.colorbar()
     plt.savefig("results/integrator_trajectories" + datetime.now().strftime("%Y%m%d-%H%M%S") + ".pdf")
 def plot_value_function_integrator(max_x1:float, max_x2:float,
@@ -310,7 +310,7 @@ def plot_value_function_integrator(max_x1:float, max_x2:float,
     locator = MaxNLocator(nbins=10)
     levels_locator = locator.tick_values(outputs.min(), outputs.max())
     plt.contour(mesh[0],mesh[1],outputs,levels=levels,colors="black")
-    plt.contourf(mesh[0],mesh[1],outputs,levels=levels_locator)
+    plt.contourf(mesh[0],mesh[1],outputs,levels=levels_locator,cmap='coolwarm')
     plt.plot([-max_x1, -max_x1], [-max_x2, max_x2], "r")
     plt.plot([max_x1, max_x1], [-max_x2, max_x2], "r")
     plt.plot([-max_x1, max_x1], [-max_x2, -max_x2], "r")
