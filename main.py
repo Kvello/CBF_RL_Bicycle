@@ -53,10 +53,11 @@ class SafetyValueFunction(nn.Module):
                  activation:nn.Module = nn.Tanh()):
         super(SafetyValueFunction, self).__init__()
         self.layers = nn.Sequential() 
-        dims = [input_size] + layers + [1]
+        dims = [input_size] + layers 
         for i in range(len(dims)-1):
             self.layers.add_module(f"layer_{i}",nn.Linear(dims[i],dims[i+1],device=device))
             self.layers.add_module(f"activation_{i}",activation)
+        self.layers.add_module("output",nn.Linear(dims[-1],1,device=device))
     def forward(self, x:torch.Tensor):
         return self.layers(x)
 device = (
@@ -90,9 +91,6 @@ def reset_batched_env(td, td_reset, env):
     """
     td = env.gen_params([*env.batch_size])
     td_new = env.base_env.reset(td)
-    if not td_new["x1"].shape == env.batch_size:
-        print(td.shape)
-        print(td)
     return td_new
 if __name__ == "__main__":
     args = parse_args() 
@@ -111,10 +109,10 @@ if __name__ == "__main__":
     max_x1 = 1.0
     max_x2 = 1.0
     dt = 0.05
-    frames_per_batch = int(2**16)
-    lr = 1e-3
+    frames_per_batch = int(2**15)
+    lr = 1e-5
     max_grad_norm = 1.0
-    total_frames = int(2**21)
+    total_frames = int(2**19)
     batches_per_process = 16
     num_workers = 8
     sub_batch_size = 64  # cardinality of the sub-samples gathered from the current data in the inner loop
@@ -246,9 +244,9 @@ if __name__ == "__main__":
         )
 
         optim = torch.optim.Adam(loss_module.parameters(), lr)
-        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-            optim, total_frames // frames_per_batch, 1e-8
-        )
+        # scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+        #     optim, total_frames // frames_per_batch, 1e-8
+        # )
         print("Training")
         logs = defaultdict(list)
         pbar = tqdm(total=total_frames)
@@ -302,7 +300,7 @@ if __name__ == "__main__":
                 wandb.log({**logs})
             else:
                 pbar.set_description(", ".join([eval_str, cum_reward_str, stepcount_str, lr_str]))
-            scheduler.step()
+            # scheduler.step()
     wandb.finish() 
     collector.shutdown()
     #######################
