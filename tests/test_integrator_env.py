@@ -56,8 +56,8 @@ def test_cost_and_reset(env):
     td["x2"] = td["params","max_x2"] + 0.01 
     td["action"] = td["params","max_input"].clone().detach()
     stepped = env.step(td)
-    assert (stepped["x2"] >= td["params","max_x2"], "The purpose of this test is to move the state\
-        outside the safety region. The input {td['action']} did not acheive this.")
+    assert stepped["x2"] >= td["params","max_x2"], "The purpose of this test is to move the state\
+        outside the safety region. The input {td['action']} did not acheive this."
     assert obs_spec.contains(stepped), "The output of step_mdp is not a valid TensorDict"
     assert stepped["next","reward"] == -1.0, "The cost of the state is not positive"
     assert stepped["next","done"] == True, "The episode should have ended"
