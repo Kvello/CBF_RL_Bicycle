@@ -33,7 +33,8 @@ from tqdm import tqdm
 from envs.integrator import SafeDoubleIntegratorEnv, plot_integrator_trajectories, plot_value_function_integrator
 from datetime import datetime
 import argparse
-from results.evaluate import evaluate_policy
+from results.evaluate import evaluate_policy, calculate_bellman_violation
+from utils.utils import reset_batched_env   
 import wandb
 
 class SafetyValueFunction(nn.Module):
@@ -87,14 +88,13 @@ def parse_args():
     parser.add_argument("--track", action="store_true", default=False, help="Track the training with wandb")
     parser.add_argument("--wandb_project", type=str, default="ppo_safe_integrator", help="Wandb project name")
     parser.add_argument("--experiment_name", type=str, default=None, help="Wandb experiment name")
+    parser.add_argument("--track_bellman_violation", action="store_true", 
+                        default=False, help="Track the Bellman violation")
+    parser.add_argument("--plot_bellman_violation", action="store_true",
+                        default=False, help="Plot the Bellman violation of trained value function and policy")
+    
     return parser.parse_args()
     
-def reset_batched_env(td, td_reset, env):
-    """Reset a batched environment.
-    """
-    td = env.gen_params([*env.batch_size])
-    td_new = env.base_env.reset(td)
-    return td_new
 if __name__ == "__main__":
     args = parse_args() 
     if args.track:
@@ -113,7 +113,7 @@ if __name__ == "__main__":
     max_x2 = 1.0
     dt = 0.05
     frames_per_batch = int(2**16)
-    lr = 5e-6
+    lr = 5e-5
     max_grad_norm = 1.0
     total_frames = int(2**20)
     num_epochs = 64  # optimization steps per batch of data collected
@@ -132,7 +132,7 @@ if __name__ == "__main__":
     else:
         batches_per_process = int(2**12)
         num_workers = 1
-        sub_batch_size = frames_per_batch
+        sub_batch_size = int(2**10)
     #######################
     # Environment:
     #######################
@@ -307,14 +307,27 @@ if __name__ == "__main__":
             if i % 10 == 0 and args.eval:
                 eval_logs, eval_str = evaluate_policy(env, policy_module, max_rollout_len)
                 for key, val in eval_logs.items():
-                    logs[key].append(val)
+                    logs[key] = val
+                if args.track_bellman_violation:
+                    state_space = {"x1": {"low": -max_x1, "high": max_x1},
+                                   "x2": {"low": -max_x2, "high": max_x2}}
+                    bellman_violation = calculate_bellman_violation(10, 
+                                                                    value_net,
+                                                                    state_space, 
+                                                                    policy_module,
+                                                                    env, 
+                                                                    gamma)
+                                                                    
+                    logs["bellman_violation_mean"] = bellman_violation.flatten().mean().item()
+                    logs["bellman_violation_max"] = bellman_violation.flatten().max().item()
+                    logs["bellman_violation_std"] = bellman_violation.flatten().std().item()
             if args.track:
                 wandb.log({**logs})
             else:
                 pbar.set_description(", ".join([eval_str, cum_reward_str, stepcount_str, lr_str]))
             # scheduler.step()
-    wandb.finish() 
-    collector.shutdown()
+        wandb.finish() 
+        collector.shutdown()
     #######################
     # Evaluation:
     #######################
@@ -335,7 +348,7 @@ if __name__ == "__main__":
         value_landscape = plot_value_function_integrator(max_x1, 
                                        max_x2,
                                        value_function_resolution,
-                                       value_module)
+                                       value_net)
     else:
         value_landscape = None
     if args.plot_traj > 0:
@@ -343,10 +356,39 @@ if __name__ == "__main__":
                                     policy_module,
                                     max_rollout_len,
                                     args.plot_traj,
-                                    max_x1,
-                                    max_x2,
-                                    value_landscape)
+                                    value_net)
         print("Plotted trajectories")
+    if args.plot_bellman_violation:
+        state_space = {"x1": {"low": -max_x1, "high": max_x1},
+                       "x2": {"low": -max_x2, "high": max_x2}}
+
+        print("Calculating and plotting Bellman violation")
+        obs_norm_loc = env.transform[3].loc
+        obs_norm_scale = env.transform[3].scale
+        after_batch_trasnform = Compose(
+            UnsqueezeTransform(in_keys=["x1", "x2"], dim=-1,in_keys_inv=["x1","x2"]),
+            CatTensors(in_keys =["x1", "x2"], out_key= "obs",del_keys=False,dim=-1),
+            ObservationNorm(in_keys=["obs"], out_keys=["obs"],
+                            loc=obs_norm_loc,scale=obs_norm_scale),
+            DoubleToFloat(),
+            StepCounter(max_steps=max_rollout_len),
+        )
+        bm_viol = calculate_bellman_violation(10, 
+                                            value_net,
+                                            state_space, 
+                                            policy_module,
+                                            base_env,
+                                            gamma,
+                                            after_batch_transform=after_batch_trasnform)
+        plt.figure(figsize=(10, 10))
+        # Better with contourf, or imshow or maybe surface plot or pcolormesh
+        plt.contourf(bm_viol,cmap="coolwarm")
+        plt.colorbar()
+        plt.title("Bellman violation")
+        plt.xlabel("x1")
+        plt.ylabel("x2")
+        plt.savefig("results/ppo_safe_integrator_bellman_violation" +\
+            datetime.now().strftime("%Y%m%d-%H%M%S") + ".pdf")
     if args.plot_training:
         # Plot training statistics
         print("Plotting training statistics")
@@ -364,23 +406,3 @@ if __name__ == "__main__":
         plt.plot(logs["eval step_count"])
         plt.title("Max step count (test)")
         plt.savefig("results/ppo_safe_integrator_statistics.png")
-
-    # # Plot value-function landscape
-    # plt.figure(figsize=(10, 10))
-    # resolution = 10 # point per unit
-    # x_points = int(2*max_x1*1.1*resolution)
-    # y_points = int(2*max_x2*1.1*resolution)
-    # x = torch.linspace(-max_x1*1.1, max_x1*1.1, x_points)
-    # y = torch.linspace(-max_x2*1.1, max_x2*1.1, y_points)
-    # X, Y = torch.meshgrid(x, y, indexing="xy")
-    # Z = torch.stack([X.flatten(), Y.flatten()], dim=-1)
-    # V = value_net(Z)
-    # # CBF is supposed to be -V
-    # V = -V.reshape(x_points, y_points)
-    # plt.contourf(X, Y, V.detach().numpy(), 20)
-    # # Plot lines corresponding to the safe set
-    # plt.plot([-max_x1, -max_x1], [-max_x2, max_x2], "r")
-    # plt.plot([max_x1, max_x1], [-max_x2, max_x2], "r")
-    # plt.plot([-max_x1, max_x1], [-max_x2, -max_x2], "r")
-    # plt.plot([-max_x1, max_x1], [max_x2, max_x2], "r")
-    # plt.savefig("ppo_safe_integrator_value_function.png")
