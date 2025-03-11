@@ -51,7 +51,7 @@ class SafetyValueFunction(nn.Module):
                  input_size:int,
                  device:torch.device=torch.device("cpu"),
                  layers:List[int] = [64,64],
-                 activation:nn.Module = nn.Tanh()):
+                 activation:nn.Module = nn.ReLU()):
         super(SafetyValueFunction, self).__init__()
         self.layers = nn.Sequential() 
         dims = [input_size] + layers 
