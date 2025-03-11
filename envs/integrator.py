@@ -62,7 +62,8 @@ class SafeDoubleIntegratorEnv(EnvBase):
                 generator=self.rng).item()
         self.set_seed(seed)
     def _set_seed(self, seed: Optional[int]):
-        rng = torch.manual_seed(seed)
+        rng = torch.Generator(device=self.device)
+        rng.manual_seed(seed)
         self.rng = rng
     def gen_params(self,batch_size:Optional[List[int]]=None, device=None)->TensorDictBase:
         """Returns a TensorDict with the parameters of the environment
