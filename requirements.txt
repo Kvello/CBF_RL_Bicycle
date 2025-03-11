@@ -284,7 +284,7 @@ wcwidth==0.2.13
     # via prompt-toolkit
 wheel==0.45.1
     # via pip-tools
-
+tensorboard
 # The following packages are considered to be unsafe in a requirements file:
 # pip
 # setuptools
