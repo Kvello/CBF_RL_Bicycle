@@ -13,7 +13,6 @@ bcrypt==4.2.0
 Brotli==1.1.0
 brotlicffi==1.1.0.0
 cachetools==5.5.0
-CBF_RL==0.1
 certifi==2024.8.30
 cffi==1.17.1
 charset-normalizer==3.3.2
