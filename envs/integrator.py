@@ -43,6 +43,7 @@ class SafeDoubleIntegratorEnv(EnvBase):
     def __init__(self, td_params=None, seed=None, device=None):
         self.device = device
         if td_params is None:
+            # Default parameters
             td_params = TensorDict({
             "params": TensorDict({
                 "dt": 0.01,
@@ -154,7 +155,8 @@ class SafeDoubleIntegratorEnv(EnvBase):
         # only be detected in the next step, and we won't set termiated to True immeadiately
         # This is a design choice, and can be changed if needed
         costs = torch.zeros_like(x1)
-        costs = torch.where(cls.constraints_satisfied(x1, x2), costs, torch.tensor(1.0))
+        costs = torch.where(cls.constraints_satisfied(x1, x2), costs, 
+                            torch.tensor(1.0,device=x1.device))
 
         dt = tensordict["params", "dt"]
         # Unpack state and action
@@ -222,24 +224,29 @@ class SafeDoubleIntegratorEnv(EnvBase):
 # The key is that the plotting funcitons should be separate from each other, but can
 # be called in sequence to generate the desired plots
 
-def plot_integrator_trajectories(env, 
-                                 policy_module, 
+def plot_integrator_trajectories(env: EnvBase,
+                                 policy_module: nn.Module,
                                  rollout_len:int, 
                                  num_trajectories:int,
-                                 max_x1:float,
-                                 max_x2:float,
-                                 value_landscape:Optional[np.ndarray]=None):
+                                 value_net:Optional[nn.Module]=None):
     """Plots the trajectories of the agent in the environment.
 
     Args:
-        env (_type_): _description_
-        policy_module (_type_): _description_
-        rollout_len (int): _description_
-        num_trajectories (int): _description_
+        env (EnvBase): The environment.
+        policy_module (nn.Module): The policy module.
+        rollout_len (int): The length of the rollouts.
+        num_trajectories (int): The number of trajectories to plot.
+        max_x1 (float): The maximum value of x1.
+        max_x2 (float): The maximum value of x2.
+        value_net (nn.Module, optional): The value function module. Defaults to None.
+        if provided will be used to plot the value function landscape as a countour plot
+        under the trajectories.
     """
 
     fig = plt.figure()
     i=0
+    max_x1 = env.gen_params()["params","max_x1"]
+    max_x2 = env.gen_params()["params","max_x2"]
     print(f"Generating {num_trajectories} trajectories")
     while i < num_trajectories:
         rollouts =  env.rollout(rollout_len, 
@@ -266,11 +273,20 @@ def plot_integrator_trajectories(env,
     plt.title("Trajectories of the agent")
     plt.xlim(-max_x1*1.1, max_x1*1.1)
     plt.ylim(-max_x2*1.1, max_x2*1.1)
-    if value_landscape is not None:
+    if value_net is not None:
         levels = [0.0]
-        x_vals = np.linspace(-max_x1*1.1, max_x1*1.1, value_landscape.shape[0])
-        y_vals = np.linspace(-max_x2*1.1, max_x2*1.1, value_landscape.shape[1])
-        mesh = np.meshgrid(x_vals, y_vals)
+        x1_low = -max_x1*1.1
+        x1_high = max_x1*1.1
+        x2_low = -max_x2*1.1
+        x2_high = max_x2*1.1
+        resolution = 10
+        x_vals = torch.linspace(x1_low, x1_high, ceil(resolution*(x1_high-x1_low)))
+        y_vals = torch.linspace(x2_low, x2_high, ceil(resolution*(x2_high-x2_low)))
+        mesh = torch.meshgrid(x_vals, y_vals)
+        inputs = torch.stack([m.flatten() for m in mesh],dim=-1)
+        value_function_landscape = value_net(inputs).detach().cpu().numpy()
+        value_landscape = value_function_landscape.reshape(mesh[0].shape)
+        
         locator = MaxNLocator(nbins=10)
         levels_locator = locator.tick_values(value_landscape.min(), value_landscape.max())
         plt.contour(mesh[0],mesh[1],value_landscape,levels=levels,colors="black")
@@ -308,19 +324,19 @@ def plot_value_function_integrator(max_x1:float, max_x2:float,
     outputs = outputs.reshape(mesh[0].shape)
     fig = plt.figure()
 
-    locator = MaxNLocator(nbins=10)
-    levels_locator = locator.tick_values(outputs.min(), outputs.max())
-    plt.contour(mesh[0],mesh[1],outputs,levels=levels,colors="black")
-    plt.contourf(mesh[0],mesh[1],outputs,levels=levels_locator,cmap='coolwarm')
-    plt.plot([-max_x1, -max_x1], [-max_x2, max_x2], "r")
-    plt.plot([max_x1, max_x1], [-max_x2, max_x2], "r")
-    plt.plot([-max_x1, max_x1], [-max_x2, -max_x2], "r")
-    plt.plot([-max_x1, max_x1], [max_x2, max_x2], "r")
-    plt.xlim(-max_x1*1.1, max_x1*1.1)
-    plt.ylim(-max_x2*1.1, max_x2*1.1)
-    plt.xlabel("x1")
-    plt.ylabel("x2")
-    plt.title("Value function landscape")
-    plt.colorbar()
+    ax = fig.add_subplot(111, projection='3d')
+    
+    surf = ax.plot_surface(mesh[0],mesh[1],outputs,cmap='coolwarm')
+    ax.plot([-max_x1, -max_x1], [-max_x2, max_x2],[0,0], "r")
+    ax.plot([max_x1, max_x1], [-max_x2, max_x2],[0,0], "r")
+    ax.plot([-max_x1, max_x1], [-max_x2, -max_x2],[0,0], "r")
+    ax.plot([-max_x1, max_x1], [max_x2, max_x2], [0,0],"r")
+    ax.set_xlim(-max_x1*1.1, max_x1*1.1)
+    ax.set_ylim(-max_x2*1.1, max_x2*1.1)
+   
+    ax.set_xlabel("x1")
+    ax.set_ylabel("x2")
+    ax.set_zlabel("Value function") 
+    ax.set_title("Value function landscape")
+    fig.colorbar(surf)
     plt.savefig("results/value_function_landscape" + datetime.now().strftime("%Y%m%d-%H%M%S") + ".pdf")
-    return outputs
