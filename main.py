@@ -109,10 +109,10 @@ if __name__ == "__main__":
     max_x1 = 1.0
     max_x2 = 1.0
     dt = 0.05
-    frames_per_batch = int(2**15)
-    lr = 1e-5
+    frames_per_batch = int(2**16)
+    lr = 5e-6
     max_grad_norm = 1.0
-    total_frames = int(2**19)
+    total_frames = int(2**20)
     batches_per_process = 16
     num_workers = 8
     sub_batch_size = 64  # cardinality of the sub-samples gathered from the current data in the inner loop
@@ -149,7 +149,7 @@ if __name__ == "__main__":
             DoubleToFloat(),
             StepCounter(max_steps=max_rollout_len),
         )
-    )
+    ).to(device)
     env.transform[3].init_stats(num_iter=1000,reduce_dim=(0,1),cat_dim=1)
     gamma = 0.97
 
@@ -221,7 +221,7 @@ if __name__ == "__main__":
             cat_results=0)
 
         replay_buffer = ReplayBuffer(
-            storage=LazyTensorStorage(max_size=frames_per_batch),
+            storage=LazyTensorStorage(max_size=frames_per_batch,device=device),
             sampler=SamplerWithoutReplacement(),
         )
 
@@ -229,7 +229,8 @@ if __name__ == "__main__":
             gamma=gamma,
             lmbda=lmbda,
             value_network=value_module,
-            average_gae=True
+            average_gae=True,
+            device=device,
         )
 
         loss_module = ClipPPOLoss(
@@ -257,14 +258,14 @@ if __name__ == "__main__":
             logs["loss_critic"] = 0.0
             logs["loss_entropy"] = 0.0
             for _ in range(num_epochs):
-                advantage_module(tensordict_data)
+                advantage_module(tensordict_data.to(device))
                 data_view = tensordict_data.reshape(-1)
-                replay_buffer.extend(data_view.cpu())
+                replay_buffer.extend(data_view)
                 for _ in range(frames_per_batch // sub_batch_size):
-                    subdata = replay_buffer.sample(sub_batch_size)
-                    loss_vals = loss_module(subdata.to(device))
+                    subdata = replay_buffer.sample(sub_batch_size).to(device)
+                    loss_vals = loss_module(subdata)
                     if entropy_eps == 0.0:
-                        loss_vals["loss_entropy"] = torch.tensor(0.0)
+                        loss_vals["loss_entropy"] = torch.tensor(0.0).to(device)
                     loss_value = (
                         loss_vals["loss_objective"]
                         + loss_vals["loss_critic"]
