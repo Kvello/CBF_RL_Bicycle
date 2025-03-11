@@ -130,9 +130,9 @@ if __name__ == "__main__":
         num_workers = 1
         sub_batch_size = frames_per_batch  # cardinality of the sub-samples gathered from the current data in the inner loop
     else:
-        batches_per_process = 16
-        num_workers = 8
-        sub_batch_size = 64
+        batches_per_process = int(2**12)
+        num_workers = 1
+        sub_batch_size = frames_per_batch
     #######################
     # Environment:
     #######################
