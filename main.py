@@ -116,15 +116,23 @@ if __name__ == "__main__":
     lr = 5e-6
     max_grad_norm = 1.0
     total_frames = int(2**20)
-    batches_per_process = 16
-    num_workers = 8
-    sub_batch_size = 64  # cardinality of the sub-samples gathered from the current data in the inner loop
     num_epochs = 64  # optimization steps per batch of data collected
     clip_epsilon = (
         0.2  # clip value for PPO loss: see the equation in the intro for more context.
     )
     lmbda = 0.95
     entropy_eps = 0.0
+    #######################
+    # Parallelization:
+    #######################
+    if device.type == "cuda":
+        batches_per_process = int(2**12)
+        num_workers = 1
+        sub_batch_size = frames_per_batch  # cardinality of the sub-samples gathered from the current data in the inner loop
+    else:
+        batches_per_process = 16
+        num_workers = 8
+        sub_batch_size = 64
     #######################
     # Environment:
     #######################
