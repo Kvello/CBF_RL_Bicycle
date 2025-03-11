@@ -23,6 +23,7 @@ from torchrl.envs import (
     EnvBase,
     BatchSizeTransform
 )
+from torch import multiprocessing
 from torchrl.envs.libs.gym import GymEnv
 from torchrl.envs.utils import check_env_specs, ExplorationType, set_exploration_type
 from torchrl.modules import ProbabilisticActor, TanhNormal, ValueOperator
@@ -60,6 +61,9 @@ class SafetyValueFunction(nn.Module):
         self.layers.add_module("output",nn.Linear(dims[-1],1,device=device))
     def forward(self, x:torch.Tensor):
         return self.layers(x)
+
+multiprocessing.set_start_method("spawn", force=True)
+is_fork = multiprocessing.get_start_method(allow_none=True) == "fork"
 device = (
     torch.device(0)
     if torch.cuda.is_available() and not is_fork
@@ -71,7 +75,6 @@ def parse_args():
     """Parse command line arguments.
     """
     parser = argparse.ArgumentParser(description="PPO for Safe Double Integrator")
-    parser.add_argument("--device", type=str, default="cpu", help="Device to use")
     parser.add_argument("--load_policy", type=str, default=None, help="Path to load policy")
     parser.add_argument("--load_value", type=str, default=None, help="Path to load value")
     parser.add_argument("--train", action="store_true", default=False, help="Train the model")
