@@ -65,9 +65,9 @@ class QuadraticSafetyValueFunction(SafetyValueFunctionBase):
             
     def forward(self, x:torch.Tensor):
         x_vec = x.unsqueeze(-1)
-        N_x = self.layers(x).reshape(-1,
+        N_x = self.layers(x).reshape(*x.shape[:-1],
                                      self.layer_sizes[-1]//self.input_size,
                                      self.input_size)
         P_x = torch.matmul(N_x.transpose(-2,-1),N_x)
-        return torch.matmul(x_vec.transpose(-2,-1),torch.matmul(P_x,x_vec)).squeeze(-1)
+        return -torch.matmul(x_vec.transpose(-2,-1),torch.matmul(P_x,x_vec)).squeeze(-1)
 
