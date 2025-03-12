@@ -40,7 +40,7 @@ class FfSafetyValueFunction(SafetyValueFunctionBase):
     def forward(self, x:torch.Tensor):
         ff = self.layers(x)
         if self.bounded:
-            return -torch.sigmoid(ff)*(1+self.eps)
+            return -torch.sigmoid(ff)*(1+self.eps) + self.eps
         else:
             return ff
 
@@ -74,5 +74,5 @@ class QuadraticSafetyValueFunction(SafetyValueFunctionBase):
                                      self.input_size)
         P_x = torch.matmul(N_x.transpose(-2,-1),N_x)
         xPx = -torch.matmul(x_vec.transpose(-2,-1),torch.matmul(P_x,x_vec)).squeeze(-1)
-        return xPx*(1+self.eps)
+        return xPx*(1+self.eps) + self.eps
 
