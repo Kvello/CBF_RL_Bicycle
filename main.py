@@ -6,7 +6,7 @@ from tensordict.nn import TensorDictModule
 from torch import nn
 from tensordict.nn.distributions import NormalParamExtractor
 from tensordict import TensorDict, TensorDictBase
-from torchrl.collectors import MultiSyncDataCollector, SyncDataCollector
+from torchrl.collectors import MultiSyncDataCollector
 from torchrl.data.replay_buffers import ReplayBuffer
 from torchrl.data.replay_buffers.samplers import SamplerWithoutReplacement
 from torchrl.data.replay_buffers.storages import LazyTensorStorage
@@ -36,32 +36,8 @@ import argparse
 from results.evaluate import evaluate_policy, calculate_bellman_violation
 from utils.utils import reset_batched_env   
 import wandb
+from models.factory import SafetyValueFunctionFactory
 
-class SafetyValueFunction(nn.Module):
-    """
-    A simple feedforward neural network that represents the value function that is
-    supposed to encode safety. The safety-preserving task structure should be used with this 
-    value function. 
-    This means the value should lie between -1 and 0 for all states.
-    Several NN-parameterizations are possible, but the default is a 2-layer feedforward network
-    with tanh activations.
-    It is reasonable to suspect that the choice of parameterization will affect the
-    learned CBF/value function significantly.
-    """
-    def __init__(self,
-                 input_size:int,
-                 device:torch.device=torch.device("cpu"),
-                 layers:List[int] = [64,64],
-                 activation:nn.Module = nn.ReLU()):
-        super(SafetyValueFunction, self).__init__()
-        self.layers = nn.Sequential() 
-        dims = [input_size] + layers 
-        for i in range(len(dims)-1):
-            self.layers.add_module(f"layer_{i}",nn.Linear(dims[i],dims[i+1],device=device))
-            self.layers.add_module(f"activation_{i}",activation)
-        self.layers.add_module("output",nn.Linear(dims[-1],1,device=device))
-    def forward(self, x:torch.Tensor):
-        return self.layers(x)
 
 multiprocessing.set_start_method("spawn", force=True)
 is_fork = multiprocessing.get_start_method(allow_none=True) == "fork"
@@ -122,6 +98,15 @@ if __name__ == "__main__":
     )
     lmbda = 0.95
     entropy_eps = 0.0
+    value_net_config = {
+        "name": "feedforward",
+        "layers": [64, 64],
+        "activation": nn.ReLU(),
+        "bounded": True,
+        "device": device,
+        "input_size": 2,
+    }
+        
     #######################
     # Parallelization:
     #######################
@@ -203,8 +188,7 @@ if __name__ == "__main__":
         policy_module.load_state_dict(torch.load(args.load_policy))
         print("Policy loaded")
 
-    value_net = SafetyValueFunction(observation_size_unbatched,device=device)
-
+    value_net = SafetyValueFunctionFactory.create(**value_net_config)
     value_module = ValueOperator(
         module=value_net,
         in_keys=["obs"],
@@ -334,9 +318,9 @@ if __name__ == "__main__":
     if args.save:
         print("Saving")
         # Save the model
-        torch.save(policy_module.state_dict(), "models/ppo_policy_safe_integrator" \
+        torch.save(policy_module.state_dict(), "models/weights/ppo_policy_safe_integrator" \
             + datetime.now().strftime("%Y%m%d-%H%M%S") + ".pth")
-        torch.save(value_module.state_dict(), "models/ppo_value_safe_integrator" \
+        torch.save(value_module.state_dict(), "models/weights/ppo_value_safe_integrator" \
             + datetime.now().strftime("%Y%m%d-%H%M%S") + ".pth")
     if args.eval:
         print("Evaluation")
