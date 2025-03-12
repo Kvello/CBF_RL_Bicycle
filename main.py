@@ -88,10 +88,10 @@ if __name__ == "__main__":
     max_x1 = 1.0
     max_x2 = 1.0
     dt = 0.05
-    frames_per_batch = int(2**16)
+    frames_per_batch = int(2**17)
     lr = 1e-5
     max_grad_norm = 1.0
-    total_frames = int(2**22)
+    total_frames = int(2**21)
     num_epochs = 20  # optimization steps per batch of data collected
     clip_epsilon = (
         0.2  # clip value for PPO loss: see the equation in the intro for more context.
@@ -101,11 +101,12 @@ if __name__ == "__main__":
     entropy_eps = 0.0
     value_net_config = {
         "name": "feedforward",
+        "eps": 1e-2,
         "layers": [64, 64],
         "activation": nn.ReLU(),
-        "bounded": True,
         "device": device,
         "input_size": 2,
+        "bounded": False,
     }
         
     #######################
