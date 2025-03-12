@@ -89,13 +89,14 @@ if __name__ == "__main__":
     max_x2 = 1.0
     dt = 0.05
     frames_per_batch = int(2**16)
-    lr = 5e-5
+    lr = 1e-5
     max_grad_norm = 1.0
-    total_frames = int(2**20)
-    num_epochs = 10  # optimization steps per batch of data collected
+    total_frames = int(2**22)
+    num_epochs = 20  # optimization steps per batch of data collected
     clip_epsilon = (
         0.2  # clip value for PPO loss: see the equation in the intro for more context.
     )
+    sub_batch_size = int(2**10)
     lmbda = 0.95
     entropy_eps = 0.0
     value_net_config = {
@@ -113,14 +114,14 @@ if __name__ == "__main__":
     if device.type == "cuda":
         batches_per_process = int(2**12)
         num_workers = 1
-        sub_batch_size = frames_per_batch  # cardinality of the sub-samples gathered from the current data in the inner loop
     else:
         batches_per_process = int(2**12)
         num_workers = 1
-        sub_batch_size = int(2**10)
     #######################
     # Environment:
     #######################
+    state_space = {"x1": {"low": -max_x1, "high": max_x1},
+                    "x2": {"low": -max_x2, "high": max_x2}}
     max_rollout_len = args.max_rollout_len
     parameters = TensorDict({
         "params" : TensorDict({
@@ -149,7 +150,7 @@ if __name__ == "__main__":
         )
     ).to(device)
     env.transform[3].init_stats(num_iter=1000,reduce_dim=(0,1),cat_dim=1)
-    gamma = 0.97
+    gamma = 0.99
 
     
     # Handle both batch-locked and unbatched action specs
@@ -291,26 +292,23 @@ if __name__ == "__main__":
             stepcount_str = f"step count (max): {logs['step_count']}"
             logs["lr"] = optim.param_groups[0]["lr"]
             lr_str = f"lr policy: {logs['lr']: 4.6f}"
+            if args.track_bellman_violation:
+                bm_viol = calculate_bellman_violation(10, 
+                                                    value_net,
+                                                    state_space, 
+                                                    policy_module,
+                                                    base_env, 
+                                                    gamma,
+                                                    after_batch_transform=after_batch_transform)
+                                            
+                                                                
+                logs["bellman_violation_mean"] = bm_viol.flatten().mean().item()
+                logs["bellman_violation_max"] = bm_viol.flatten().max().item()
+                logs["bellman_violation_std"] = bm_viol.flatten().std().item()
             if i % 10 == 0 and args.eval:
                 eval_logs, eval_str = evaluate_policy(env, policy_module, max_rollout_len)
                 for key, val in eval_logs.items():
                     logs[key] = val
-                if args.track_bellman_violation:
-                    state_space = {"x1": {"low": -max_x1, "high": max_x1},
-                                   "x2": {"low": -max_x2, "high": max_x2}}
-                    bm_viol = calculate_bellman_violation(10, 
-                                                        value_net,
-                                                        state_space, 
-                                                        policy_module,
-                                                        base_env, 
-                                                        gamma,
-                                                        after_batch_transform=after_batch_transform
-                                                        )
-                                                
-                                                                    
-                    logs["bellman_violation_mean"] = bm_viol.flatten().mean().item()
-                    logs["bellman_violation_max"] = bm_viol.flatten().max().item()
-                    logs["bellman_violation_std"] = bm_viol.flatten().std().item()
             if args.track:
                 wandb.log({**logs})
             else:
@@ -349,8 +347,6 @@ if __name__ == "__main__":
                                     value_net)
         print("Plotted trajectories")
     if args.plot_bellman_violation:
-        state_space = {"x1": {"low": -max_x1, "high": max_x1},
-                       "x2": {"low": -max_x2, "high": max_x2}}
 
         print("Calculating and plotting Bellman violation")
         obs_norm_loc = env.transform[3].loc
