@@ -26,10 +26,12 @@ class FfSafetyValueFunction(SafetyValueFunctionBase):
                  device:torch.device=torch.device("cpu"),
                  layers:List[int] = [64,64],
                  activation:nn.Module = nn.ReLU(),
-                 bounded:bool = True):
+                 bounded:bool = True,
+                 eps = 1e-2):
         super().__init__()
         self.layers = nn.Sequential() 
         self.bounded = bounded
+        self.eps = eps
         dims = [input_size] +layers 
         for i in range(len(dims)-1):
             self.layers.add_module(f"layer_{i}",nn.Linear(dims[i],dims[i+1],device=device))
@@ -38,7 +40,7 @@ class FfSafetyValueFunction(SafetyValueFunctionBase):
     def forward(self, x:torch.Tensor):
         ff = self.layers(x)
         if self.bounded:
-            return -torch.sigmoid(ff)
+            return -torch.sigmoid(ff)*(1+self.eps)
         else:
             return ff
 
@@ -52,9 +54,11 @@ class QuadraticSafetyValueFunction(SafetyValueFunctionBase):
                  input_size:int,
                  device:torch.device=torch.device("cpu"),
                  layers:List[int] = [64,64],
-                activation:nn.Module = nn.ReLU()):
+                 activation:nn.Module = nn.ReLU(),
+                 eps = 1e-2):
         assert layers[-1] % input_size == 0, "Last layer must be a multiple of input size"
         super().__init__()
+        self.eps = eps
         self.input_size = input_size
         self.layer_sizes = layers
         self.layers = nn.Sequential()
@@ -69,5 +73,6 @@ class QuadraticSafetyValueFunction(SafetyValueFunctionBase):
                                      self.layer_sizes[-1]//self.input_size,
                                      self.input_size)
         P_x = torch.matmul(N_x.transpose(-2,-1),N_x)
-        return -torch.matmul(x_vec.transpose(-2,-1),torch.matmul(P_x,x_vec)).squeeze(-1)
+        xPx = -torch.matmul(x_vec.transpose(-2,-1),torch.matmul(P_x,x_vec)).squeeze(-1)
+        return xPx*(1+self.eps)
 
