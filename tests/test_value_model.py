@@ -5,8 +5,8 @@ from typing import List
 from models.value import (
     FfSafetyValueFunction, 
     QuadraticSafetyValueFunction, 
-    SafetyValueFunctionFactory
 )
+from models.factory import SafetyValueFunctionFactory
 
 def test_ff_safety_value_function_shapes():
     input_size = 10

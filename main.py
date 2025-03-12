@@ -6,7 +6,7 @@ from tensordict.nn import TensorDictModule
 from torch import nn
 from tensordict.nn.distributions import NormalParamExtractor
 from tensordict import TensorDict, TensorDictBase
-from torchrl.collectors import MultiSyncDataCollector, SyncDataCollector
+from torchrl.collectors import MultiSyncDataCollector
 from torchrl.data.replay_buffers import ReplayBuffer
 from torchrl.data.replay_buffers.samplers import SamplerWithoutReplacement
 from torchrl.data.replay_buffers.storages import LazyTensorStorage
@@ -36,6 +36,7 @@ import argparse
 from results.evaluate import evaluate_policy, calculate_bellman_violation
 from utils.utils import reset_batched_env   
 import wandb
+from models.factory import SafetyValueFunctionFactory
 
 
 multiprocessing.set_start_method("spawn", force=True)
@@ -97,6 +98,14 @@ if __name__ == "__main__":
     )
     lmbda = 0.95
     entropy_eps = 0.0
+    value_net_config = {
+        "name": "feedforward",
+        "layers": [64, 64],
+        "activation": nn.ReLU,
+        "bounded": True,
+        "device": device,
+    }
+        
     #######################
     # Parallelization:
     #######################
@@ -178,7 +187,6 @@ if __name__ == "__main__":
         policy_module.load_state_dict(torch.load(args.load_policy))
         print("Policy loaded")
 
-    value_net = SafetyValueFunction(observation_size_unbatched,device=device)
 
     value_module = ValueOperator(
         module=value_net,
