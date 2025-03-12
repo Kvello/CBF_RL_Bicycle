@@ -2,7 +2,7 @@ from torchrl.data import TensorSpec
 import wandb
 import torch
 from math import ceil
-from typing import Optional
+from typing import Optional, List
 from torch import nn
 from tensordict import TensorDict
 from tensordict.nn import TensorDictModule
@@ -53,8 +53,8 @@ def calculate_bellman_violation(resolution:int,
                                 base_env:EnvBase,
                                 gamma:float,
                                 state_group_name:Optional[str] = "obs",
-                                after_batch_transform:Optional[Transform] = None,
-                                before_batch_transform:Optional[Transform] = None):
+                                after_batch_transform:Optional[List[Transform]] = [],
+                                before_batch_transform:Optional[List[Transform]] = []):
 
     """Calculates the violation of the Bellman equation for the value function
     across the state space. This is useful to check if the value function is
@@ -76,9 +76,9 @@ def calculate_bellman_violation(resolution:int,
         the policy module expects the states to be grouped under a certain name.
         if None, the states are not grouped. Default is "obs".
         after_batch_transform (Transform): A transform to apply to the base env
-        after the batch transformation. Default is None.
+        after the batch transformation. Default is empty list.
         before_batch_transform (Transform): A transform to apply to the base env
-        before the batch transformation. Default is None.
+        before the batch transformation. Default is empty list.
     """
     dim = len(state_space)
     device = torch.device("cpu")
@@ -93,12 +93,12 @@ def calculate_bellman_violation(resolution:int,
     mesh = torch.meshgrid(*linspaces,indexing="xy")
     inputs = torch.stack([m.flatten() for m in mesh],dim=-1)
     batch_size = inputs.shape[0]
-    transforms = [before_batch_transform,
+    transforms = [*before_batch_transform,
                   BatchSizeTransform(batch_size=[batch_size],
                                      reset_func=reset_batched_env,
                                      env_kwarg=True),
-                  after_batch_transform]
-    transforms = [t for t in transforms if t is not None]
+                  *after_batch_transform]
+    transforms = [t.clone() for t in transforms if t is not None]
     env = TransformedEnv(
         base_env,
         Compose(*transforms)
