@@ -101,9 +101,10 @@ if __name__ == "__main__":
     value_net_config = {
         "name": "feedforward",
         "layers": [64, 64],
-        "activation": nn.ReLU,
+        "activation": nn.ReLU(),
         "bounded": True,
         "device": device,
+        "input_size": 2,
     }
         
     #######################
@@ -187,7 +188,7 @@ if __name__ == "__main__":
         policy_module.load_state_dict(torch.load(args.load_policy))
         print("Policy loaded")
 
-
+    value_net = SafetyValueFunctionFactory.create(**value_net_config)
     value_module = ValueOperator(
         module=value_net,
         in_keys=["obs"],
