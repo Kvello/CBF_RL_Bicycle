@@ -24,6 +24,7 @@ pkgs.mkShellNoCC {
       ipykernel
       pip
       wandb
+      ray
     ]))
   ];
   shellHook = ''
