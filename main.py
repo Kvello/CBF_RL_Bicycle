@@ -1,15 +1,15 @@
 from collections import defaultdict
 import matplotlib.pyplot as plt
 import torch
-from typing import List
+from typing import List, Dict, Any
 from tensordict.nn import TensorDictModule
 from torch import nn
 from tensordict.nn.distributions import NormalParamExtractor
-from tensordict import TensorDict, TensorDictBase
-from torchrl.collectors import MultiSyncDataCollector
+from tensordict import TensorDict
 from torchrl.data.replay_buffers import ReplayBuffer
-from torchrl.data.replay_buffers.samplers import SamplerWithoutReplacement
+from torchrl.collectors import MultiSyncDataCollector
 from torchrl.data.replay_buffers.storages import LazyTensorStorage
+from torchrl.data.replay_buffers.samplers import SamplerWithoutReplacement
 from torchrl.envs import (
     Compose,
     DoubleToFloat,
@@ -18,18 +18,12 @@ from torchrl.envs import (
     TransformedEnv,
     CatTensors,
     UnsqueezeTransform,
-    ParallelEnv,
     EnvCreator,
-    EnvBase,
     BatchSizeTransform
 )
 from torch import multiprocessing
-from torchrl.envs.libs.gym import GymEnv
-from torchrl.envs.utils import check_env_specs, ExplorationType, set_exploration_type
+from torchrl.envs.utils import ExplorationType
 from torchrl.modules import ProbabilisticActor, TanhNormal, ValueOperator
-from torchrl.objectives import ClipPPOLoss
-from torchrl.objectives.value import GAE
-from tqdm import tqdm
 from envs.integrator import SafeDoubleIntegratorEnv, plot_integrator_trajectories, plot_value_function_integrator
 from datetime import datetime
 import argparse
@@ -37,6 +31,7 @@ from results.evaluate import evaluate_policy, calculate_bellman_violation
 from utils.utils import reset_batched_env   
 import wandb
 from models.factory import SafetyValueFunctionFactory
+from algorithms.ppo import train_ppo
 
 
 multiprocessing.set_start_method("spawn", force=True)
@@ -48,7 +43,7 @@ device = (
 )
 
 
-def parse_args():
+def parse_args()->Dict[str,Any]:
     """Parse command line arguments.
     """
     parser = argparse.ArgumentParser(description="PPO for Safe Double Integrator")
@@ -69,16 +64,10 @@ def parse_args():
     parser.add_argument("--plot_bellman_violation", action="store_true",
                         default=False, help="Plot the Bellman violation of trained value function and policy")
     
-    return parser.parse_args()
+    return vars(parser.parse_args())
     
 if __name__ == "__main__":
     args = parse_args() 
-    if args.track:
-        wandb.init(project=args.wandb_project,
-                   sync_tensorboard=True,
-                   monitor_gym=True,
-                   save_code=True,
-                   name=args.experiment_name)
 
     #######################
     # Hyperparameters:
@@ -96,6 +85,8 @@ if __name__ == "__main__":
     clip_epsilon = (
         0.2  # clip value for PPO loss: see the equation in the intro for more context.
     )
+    critic_coef = 1.0
+    loss_critic_type = "smooth_l1"
     sub_batch_size = int(2**10)
     lmbda = 0.95
     entropy_eps = 0.0
@@ -118,12 +109,32 @@ if __name__ == "__main__":
     else:
         batches_per_process = int(2**12)
         num_workers = 1
+
+    multiprocessing.set_start_method("spawn", force=True)
+    is_fork = multiprocessing.get_start_method(allow_none=True) == "fork"
+    device = (
+        torch.device(0)
+        if torch.cuda.is_available() and not is_fork
+        else torch.device("cpu")
+    )
+    args["num_epochs"] = num_epochs
+    args["frames_per_batch"] = frames_per_batch
+    args["sub_batch_size"] = sub_batch_size
+    args["max_grad_norm"] = max_grad_norm
+    args["total_frames"] = total_frames
+    args["entropy_eps"] = entropy_eps
+    args["device"] = device
+    args["clip_epsilon"] = clip_epsilon
+    args["lmbda"] = lmbda
+    args["critic_coef"] = critic_coef
+    args["loss_critic_type"] = loss_critic_type
+    args["optim_kwargs"] = {"lr": lr}
     #######################
     # Environment:
     #######################
     state_space = {"x1": {"low": -max_x1, "high": max_x1},
                     "x2": {"low": -max_x2, "high": max_x2}}
-    max_rollout_len = args.max_rollout_len
+    max_rollout_len = args.get("max_rollout_len")
     parameters = TensorDict({
         "params" : TensorDict({
             "dt": dt,
@@ -189,8 +200,8 @@ if __name__ == "__main__":
         },
         return_log_prob=True,
     )
-    if args.load_policy is not None:
-        policy_module.load_state_dict(torch.load(args.load_policy))
+    if args.get("load_policy") is not None:
+        policy_module.load_state_dict(torch.load(args.get("load_policy")))
         print("Policy loaded")
 
     value_net = SafetyValueFunctionFactory.create(**value_net_config)
@@ -198,8 +209,8 @@ if __name__ == "__main__":
         module=value_net,
         in_keys=["obs"],
     )
-    if args.load_value is not None:
-        value_module.load_state_dict(torch.load(args.load_value))
+    if args.get("load_value") is not None:
+        value_module.load_state_dict(torch.load(args.get("load_value")))
         print("Value function loaded") 
 
 
@@ -207,7 +218,9 @@ if __name__ == "__main__":
     # Training:
     #######################
 
-    if args.train:
+    if args.get("train"):
+
+
         env_creator = EnvCreator(lambda: env)
         create_env_fn = [env_creator for _ in range(num_workers)]
         collector = MultiSyncDataCollector(
@@ -224,114 +237,37 @@ if __name__ == "__main__":
             storage=LazyTensorStorage(max_size=frames_per_batch,device=device),
             sampler=SamplerWithoutReplacement(),
         )
-
-        advantage_module = GAE(
-            gamma=gamma,
-            lmbda=lmbda,
-            value_network=value_module,
-            average_gae=True,
-            device=device,
-        )
-
-        loss_module = ClipPPOLoss(
-            actor_network=policy_module,
-            critic_network=value_module,
-            clip_epsilon=clip_epsilon,
-            entropy_bonus=bool(entropy_eps),
-            entropy_coef=entropy_eps,
-            # these keys match by default but we set this for completeness
-            critic_coef=1.0,
-            loss_critic_type="smooth_l1",
-        )
-
-        optim = torch.optim.Adam(loss_module.parameters(), lr)
+        optim = torch.optim.Adam
         # scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
         #     optim, total_frames // frames_per_batch, 1e-8
         # )
-        print("Training")
-        logs = defaultdict(list)
-        pbar = tqdm(total=total_frames)
-        eval_str = ""
-
-        for i, tensordict_data in enumerate(collector):
-            logs["loss_objective"] = 0.0
-            logs["loss_critic"] = 0.0
-            logs["loss_entropy"] = 0.0
-            for _ in range(num_epochs):
-                advantage_module(tensordict_data.to(device))
-                data_view = tensordict_data.reshape(-1)
-                replay_buffer.extend(data_view)
-                for _ in range(frames_per_batch // sub_batch_size):
-                    subdata = replay_buffer.sample(sub_batch_size).to(device)
-                    loss_vals = loss_module(subdata)
-                    if entropy_eps == 0.0:
-                        loss_vals["loss_entropy"] = torch.tensor(0.0).to(device)
-                    loss_value = (
-                        loss_vals["loss_objective"]
-                        + loss_vals["loss_critic"]
-                        + loss_vals["loss_entropy"]
-                    )
-                    logs["loss_objective"] += loss_vals["loss_objective"].item()
-                    logs["loss_critic"] += loss_vals["loss_critic"].item()
-                    logs["loss_entropy"] += loss_vals["loss_entropy"].item()
-                    
-                    loss_value.backward()
-                    # this is not strictly mandatory but it's good practice to keep
-                    # your gradient norm bounded
-                    torch.nn.utils.clip_grad_norm_(loss_module.parameters(), max_grad_norm)
-                    optim.step()
-                    optim.zero_grad()
-            logs["loss_objective"] /= num_epochs
-            logs["loss_critic"] /= num_epochs
-            logs["loss_entropy"] /= num_epochs
-            logs["reward"] = tensordict_data["next", "reward"].mean().item()
-            pbar.update(tensordict_data.numel())
-            cum_reward_str = (
-                f"average reward={logs['reward']: 4.4f}"
-            )
-            logs["step_count"] = tensordict_data["step_count"].max().item()
-            stepcount_str = f"step count (max): {logs['step_count']}"
-            logs["lr"] = optim.param_groups[0]["lr"]
-            lr_str = f"lr policy: {logs['lr']: 4.6f}"
-            if args.track_bellman_violation:
-                bm_viol = calculate_bellman_violation(10, 
-                                                    value_net,
-                                                    state_space, 
-                                                    policy_module,
-                                                    base_env, 
-                                                    gamma,
-                                                    after_batch_transform=after_batch_transform)
-                                            
-                                                                
-                logs["bellman_violation_mean"] = bm_viol.flatten().mean().item()
-                logs["bellman_violation_max"] = bm_viol.flatten().max().item()
-                logs["bellman_violation_std"] = bm_viol.flatten().std().item()
-            if i % 10 == 0 and args.eval:
-                eval_logs, eval_str = evaluate_policy(env, policy_module, max_rollout_len)
-                for key, val in eval_logs.items():
-                    logs[key] = val
-            if args.track:
-                wandb.log({**logs})
-            else:
-                pbar.set_description(", ".join([eval_str, cum_reward_str, stepcount_str, lr_str]))
-            # scheduler.step()
-        wandb.finish() 
-        collector.shutdown()
+        train_ppo(
+            env=env,
+            gamma=gamma,
+            policy_module=policy_module,
+            value_module=value_module,
+            collector=collector,
+            replay_buffer=replay_buffer,
+            optim=optim,
+            config=args,
+            after_batch_transform=after_batch_transform,
+            state_space=state_space,
+        )
     #######################
     # Evaluation:
     #######################
-    if args.save:
+    if args.get("save"):
         print("Saving")
         # Save the model
         torch.save(policy_module.state_dict(), "models/weights/ppo_policy_safe_integrator" \
             + datetime.now().strftime("%Y%m%d-%H%M%S") + ".pth")
         torch.save(value_module.state_dict(), "models/weights/ppo_value_safe_integrator" \
             + datetime.now().strftime("%Y%m%d-%H%M%S") + ".pth")
-    if args.eval:
+    if args.get("eval"):
         print("Evaluation")
         eval_logs, eval_str = evaluate_policy(env, policy_module, max_rollout_len)
         print(eval_str)
-    if args.plot_value and args.plot_traj > 0:
+    if args.get("plot_value") and args.get("plot_traj") > 0:
         print("Plotting value function")
         value_function_resolution = 10
         value_landscape = plot_value_function_integrator(max_x1, 
@@ -340,14 +276,14 @@ if __name__ == "__main__":
                                        value_net)
     else:
         value_landscape = None
-    if args.plot_traj > 0:
+    if args.get("plot_traj") > 0:
         plot_integrator_trajectories(env, 
                                     policy_module,
                                     max_rollout_len,
-                                    args.plot_traj,
+                                    args.get("plot_traj"),
                                     value_net)
         print("Plotted trajectories")
-    if args.plot_bellman_violation:
+    if args.get("plot_bellman_violation"):
 
         print("Calculating and plotting Bellman violation")
         obs_norm_loc = env.transform[3].loc
@@ -368,7 +304,7 @@ if __name__ == "__main__":
         plt.ylabel("x2")
         plt.savefig("results/ppo_safe_integrator_bellman_violation" +\
             datetime.now().strftime("%Y%m%d-%H%M%S") + ".pdf")
-    if args.plot_training:
+    if args.get("plot_training"):
         # Plot training statistics
         print("Plotting training statistics")
         plt.figure(figsize=(10, 10))
