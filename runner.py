@@ -104,11 +104,11 @@ if __name__ == "__main__":
     # Parallelization:
     #######################
     if device.type == "cuda":
-        batches_per_process = int(2**12)
-        num_workers = 1
+        args["batches_per_process"] = int(2**12)
+        args["num_workers"] = 1
     else:
-        batches_per_process = int(2**12)
-        num_workers = 1
+        args["batches_per_process"] = int(2**12)
+        args["num_workers"] = 1
 
     multiprocessing.set_start_method("spawn", force=True)
     is_fork = multiprocessing.get_start_method(allow_none=True) == "fork"
@@ -144,7 +144,7 @@ if __name__ == "__main__":
     env = TransformedEnv(
         base_env,
         Compose(
-            BatchSizeTransform(batch_size=[batches_per_process],
+            BatchSizeTransform(batch_size=[args["batches_per_process"]],
                                reset_func=reset_batched_env,
                                env_kwarg=True),
             *after_batch_transform
@@ -248,11 +248,11 @@ if __name__ == "__main__":
         eval_func = lambda x: evaluate_policy(env, policy_module, max_rollout_len)
     if args.get("train"):
         env_creator = EnvCreator(lambda: env)
-        create_env_fn = [env_creator for _ in range(num_workers)]
+        create_env_fn = [env_creator for _ in range(args["num_workers"])]
         collector = MultiSyncDataCollector(
             create_env_fn=create_env_fn,
             policy=policy_module,
-            frames_per_batch=frames_per_batch,
+            frames_per_batch=args["frames_per_batch"],
             total_frames=total_frames,
             split_trajs=False,
             device=device,
@@ -260,7 +260,7 @@ if __name__ == "__main__":
             cat_results=0)
 
         replay_buffer = ReplayBuffer(
-            storage=LazyTensorStorage(max_size=frames_per_batch,device=device),
+            storage=LazyTensorStorage(max_size=args["frames_per_batch"],device=device),
             sampler=SamplerWithoutReplacement(),
         )
         optim = torch.optim.Adam
