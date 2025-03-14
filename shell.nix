@@ -28,6 +28,7 @@ pkgs.mkShellNoCC {
       pandas
       scikit-learn
       pyarrow
+      hyperopt
     ]))
   ];
   shellHook = ''
