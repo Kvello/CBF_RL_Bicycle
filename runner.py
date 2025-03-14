@@ -24,6 +24,7 @@ from torchrl.envs import (
 from torch import multiprocessing
 from torchrl.envs.utils import ExplorationType
 from torchrl.modules import ProbabilisticActor, TanhNormal, ValueOperator
+from torchrl.objectives.value import GAE
 from envs.integrator import SafeDoubleIntegratorEnv, plot_integrator_trajectories, plot_value_function_integrator
 from datetime import datetime
 import argparse
@@ -31,7 +32,7 @@ from results.evaluate import evaluate_policy, calculate_bellman_violation
 from utils.utils import reset_batched_env   
 import wandb
 from models.factory import SafetyValueFunctionFactory
-from algorithms.ppo import train_ppo
+from algorithms.ppo import PPO
 
 
 multiprocessing.set_start_method("spawn", force=True)
@@ -129,11 +130,14 @@ if __name__ == "__main__":
     args["critic_coef"] = critic_coef
     args["loss_critic_type"] = loss_critic_type
     args["optim_kwargs"] = {"lr": lr}
+    args["bellman_eval_res"] = 10
     #######################
     # Environment:
     #######################
     state_space = {"x1": {"low": -max_x1, "high": max_x1},
                     "x2": {"low": -max_x2, "high": max_x2}}
+    args["state_space"] = state_space
+
     max_rollout_len = args.get("max_rollout_len")
     parameters = TensorDict({
         "params" : TensorDict({
@@ -163,6 +167,7 @@ if __name__ == "__main__":
     ).to(device)
     env.transform[3].init_stats(num_iter=1000,reduce_dim=(0,1),cat_dim=1)
     gamma = 0.99
+    args["gamma"] = gamma
 
     
     # Handle both batch-locked and unbatched action specs
@@ -217,10 +222,30 @@ if __name__ == "__main__":
     #######################
     # Training:
     #######################
+    ppo_entity = PPO()
+    ppo_entity.setup(args)
 
+    if args.get("track_bellman_violation",False):
+        base_env = env.base_env if isinstance(env, TransformedEnv) else env
+        value_net = value_module.module
+        def eval_func(data):
+            logs = defaultdict(list)
+            bm_viol = calculate_bellman_violation(args.get("bellman_eval_res",10),
+                                            value_net,
+                                            state_space, 
+                                            policy_module,
+                                            base_env, 
+                                            gamma,
+                                            after_batch_transform=self.after_batch_transform,
+                                            before_batch_transform=self.before_batch_transform)
+
+            logs["bellman_violation_mean"] = bm_viol.flatten().mean().item()
+            logs["bellman_violation_max"] = bm_viol.flatten().max().item()
+            logs["bellman_violation_std"] = bm_viol.flatten().std().item()
+            return logs
+    else:
+        eval_func = None
     if args.get("train"):
-
-
         env_creator = EnvCreator(lambda: env)
         create_env_fn = [env_creator for _ in range(num_workers)]
         collector = MultiSyncDataCollector(
@@ -241,18 +266,15 @@ if __name__ == "__main__":
         # scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
         #     optim, total_frames // frames_per_batch, 1e-8
         # )
-        train_ppo(
-            env=env,
-            gamma=gamma,
+        ppo_entity.train(
             policy_module=policy_module,
             value_module=value_module,
+            optim=optim,
             collector=collector,
             replay_buffer=replay_buffer,
-            optim=optim,
-            config=args,
-            after_batch_transform=after_batch_transform,
-            state_space=state_space,
-        )
+            eval_func=eval_func 
+        ) 
+        
     #######################
     # Evaluation:
     #######################
