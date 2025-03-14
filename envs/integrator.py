@@ -296,7 +296,7 @@ def plot_integrator_trajectories(env: EnvBase,
 def plot_value_function_integrator(max_x1:float, max_x2:float,
                                 resolution:int, 
                                 value_net:nn.Module,
-                                levels:List[float] = [0.0])->np.ndarray:
+                                levels:List[float] = [0.0]):
     """Plots the value function landscape across the state space.
     Current implementation only supports 2D state spaces.
     Args:
