@@ -25,6 +25,9 @@ pkgs.mkShellNoCC {
       pip
       wandb
       ray
+      pandas
+      scikit-learn
+      pyarrow
     ]))
   ];
   shellHook = ''
