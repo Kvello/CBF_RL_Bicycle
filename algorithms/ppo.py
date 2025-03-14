@@ -80,11 +80,8 @@ class PPO(RLAlgoBase):
             ValueError: if the collector does not have the total_frames attribute.
         """
 
-        if self.config is None:
-            raise ValueError("Setup must be called with a config before training")
-        
         if hasattr(collector, "requested_frames_per_batch"):
-            self.frames_per_batch = collector.requested_frames_per_batch
+            frames_per_batch = collector.requested_frames_per_batch
         else:
             raise ValueError("Collector must have requested_frames_per_batch attribute.\
                             Try using a different collector.")
@@ -93,6 +90,9 @@ class PPO(RLAlgoBase):
         else:
             raise ValueError("Collector must have total_frames attribute.\
                                 Try using a different collector.")
+        if self.config is None:
+            raise ValueError("Setup must be called with a config before training")
+        
 
         if self.config.get("track", False):
             wandb.init(project=self.config.get("wandb_project", "ppo"),
@@ -101,25 +101,6 @@ class PPO(RLAlgoBase):
                     save_code=True,
                     name=self.config.get("experiment_name", None))
             
-        self.replay_buffer = replay_buffer
-        self.advantage_module = GAE(
-            gamma=self.gamma,
-            lmbda=self.lmbda,
-            value_network=value_module,
-            average_gae=True,
-            device=self.device,
-        )
-
-        self.loss_module = ClipPPOLoss(
-            actor_network=policy_module,
-            critic_network=value_module,
-            clip_epsilon=self.clip_epsilon,
-            entropy_bonus=bool(self.entropy_eps),
-            entropy_coef=self.entropy_eps,
-            critic_coef=self.critic_coef,
-            loss_critic_type=self.loss_critictype,
-        )
-        self.optim = optim(self.loss_module.parameters(), **self.config.get("optim_kwargs", {}))
 
         print("Training with config:")
         print(self.config)
@@ -128,11 +109,12 @@ class PPO(RLAlgoBase):
         pbar = tqdm(total=total_frames)
         for i, tensordict_data in enumerate(collector):
             logs.update(self.step(tensordict_data,
-                                   self.loss_module,
-                                   self.optim,
-                                   self.advantage_module,
-                                   replay_buffer,
-                                   eval_func=eval_func))
+                                  frames_per_batch,
+                                  value_module,
+                                  policy_module,
+                                  optim,
+                                  replay_buffer,
+                                  eval_func=eval_func))
             pbar.update(tensordict_data.numel())
             # scheduler.step()
         if self.config.get("track", False):
@@ -151,12 +133,31 @@ class PPO(RLAlgoBase):
 
     def step(self, 
              tensordict_data: TensorDict,
-             loss_module: TensorDictModule,
+             frames_per_batch: int,
+             value_module: TensorDictModule,
+             policy_module: TensorDictModule,
              optim: torch.optim.Optimizer,
-             advantage_module: TensorDictModule,
              replay_buffer: ReplayBuffer,
              eval_func: Optional[Callable[None, Dict[str, float]]] = None):
 
+        advantage_module = GAE(
+            gamma=self.gamma,
+            lmbda=self.lmbda,
+            value_network=value_module,
+            average_gae=True,
+            device=self.device,
+        )
+
+        loss_module = ClipPPOLoss(
+            actor_network=policy_module,
+            critic_network=value_module,
+            clip_epsilon=self.clip_epsilon,
+            entropy_bonus=bool(self.entropy_eps),
+            entropy_coef=self.entropy_eps,
+            critic_coef=self.critic_coef,
+            loss_critic_type=self.loss_critictype,
+        )
+        optim = optim(loss_module.parameters(), **self.config.get("optim_kwargs", {}))
         if self.config is None:
             raise ValueError("Setup must be called with a config before training")
         logs = defaultdict(list)
@@ -167,7 +168,7 @@ class PPO(RLAlgoBase):
             advantage_module(tensordict_data.to(self.device))
             data_view = tensordict_data.reshape(-1)
             replay_buffer.extend(data_view)
-            for _ in range(self.frames_per_batch // self.sub_batch_size):
+            for _ in range(frames_per_batch // self.sub_batch_size):
                 subdata = replay_buffer.sample(self.sub_batch_size).to(self.device)
                 loss_vals = loss_module(subdata)
                 if self.entropy_eps == 0.0:
