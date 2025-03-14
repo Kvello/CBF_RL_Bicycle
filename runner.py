@@ -55,7 +55,6 @@ def parse_args()->Dict[str,Any]:
     parser.add_argument("--plot_traj", type=int, default=0, help="Number of trajectories to plot")
     parser.add_argument("--save", action="store_true", default=False, help="Save the models")
     parser.add_argument("--plot_value", action="store_true", default=False, help="Plot the value function landscape")
-    parser.add_argument("--plot_training", action="store_true", default=False, help="Plot training statistics")
     parser.add_argument("--max_rollout_len", type=int, default=100, help="Maximum rollout length")
     parser.add_argument("--track", action="store_true", default=False, help="Track the training with wandb")
     parser.add_argument("--wandb_project", type=str, default="ppo_safe_integrator", help="Wandb project name")
@@ -118,25 +117,11 @@ if __name__ == "__main__":
         if torch.cuda.is_available() and not is_fork
         else torch.device("cpu")
     )
-    args["num_epochs"] = num_epochs
-    args["frames_per_batch"] = frames_per_batch
-    args["sub_batch_size"] = sub_batch_size
-    args["max_grad_norm"] = max_grad_norm
-    args["total_frames"] = total_frames
-    args["entropy_eps"] = entropy_eps
-    args["device"] = device
-    args["clip_epsilon"] = clip_epsilon
-    args["lmbda"] = lmbda
-    args["critic_coef"] = critic_coef
-    args["loss_critic_type"] = loss_critic_type
-    args["optim_kwargs"] = {"lr": lr}
-    args["bellman_eval_res"] = 10
     #######################
     # Environment:
     #######################
     state_space = {"x1": {"low": -max_x1, "high": max_x1},
                     "x2": {"low": -max_x2, "high": max_x2}}
-    args["state_space"] = state_space
 
     max_rollout_len = args.get("max_rollout_len")
     parameters = TensorDict({
@@ -167,9 +152,30 @@ if __name__ == "__main__":
     ).to(device)
     env.transform[3].init_stats(num_iter=1000,reduce_dim=(0,1),cat_dim=1)
     gamma = 0.99
+    #######################
+    # Arguments:
+    #######################
     args["gamma"] = gamma
-
+    args["num_epochs"] = num_epochs
+    args["frames_per_batch"] = frames_per_batch
+    args["sub_batch_size"] = sub_batch_size
+    args["max_grad_norm"] = max_grad_norm
+    args["total_frames"] = total_frames
+    args["entropy_eps"] = entropy_eps
+    args["device"] = device
+    args["clip_epsilon"] = clip_epsilon
+    args["lmbda"] = lmbda
+    args["critic_coef"] = critic_coef
+    args["loss_critic_type"] = loss_critic_type
+    args["optim_kwargs"] = {"lr": lr}
+    args["bellman_eval_res"] = 10
+    args["state_space"] = state_space
     
+    
+    #######################
+    # Models:
+    #######################
+
     # Handle both batch-locked and unbatched action specs
     action_high = (env.action_spec_unbatched.high if hasattr(env, "action_spec_unbatched") 
                                                     else env.action_spec.high)
@@ -177,13 +183,6 @@ if __name__ == "__main__":
                                                     else env.action_spec.low)
     observation_size_unbatched = (env.obs_size_unbatched if hasattr(env, "obs_size_unbatched") 
                                                             else env.observation_space.shape[0])
-
-    action_size_unbatched = (env.action_size_unbatched if hasattr(env, "action_size_unbatched") 
-                                                        else env.action_spec.shape[0])
-    
-    #######################
-    # Models:
-    #######################
     actor_net = nn.Sequential(
         nn.Linear(observation_size_unbatched, num_cells,device=device),
         nn.Tanh(),
@@ -230,21 +229,23 @@ if __name__ == "__main__":
         value_net = value_module.module
         def eval_func(data):
             logs = defaultdict(list)
-            bm_viol = calculate_bellman_violation(args.get("bellman_eval_res",10),
-                                            value_net,
-                                            state_space, 
-                                            policy_module,
-                                            base_env, 
-                                            gamma,
-                                            after_batch_transform=self.after_batch_transform,
-                                            before_batch_transform=self.before_batch_transform)
-
+            bm_viol = calculate_bellman_violation(
+                args.get("bellman_eval_res",10),
+                value_net,
+                state_space, 
+                policy_module,
+                base_env, 
+                gamma,
+                after_batch_transform=after_batch_transform
+            )
+            eval_logs= evaluate_policy(env, policy_module, max_rollout_len)
+            logs.update(eval_logs)
             logs["bellman_violation_mean"] = bm_viol.flatten().mean().item()
             logs["bellman_violation_max"] = bm_viol.flatten().max().item()
             logs["bellman_violation_std"] = bm_viol.flatten().std().item()
             return logs
     else:
-        eval_func = None
+        eval_func = lambda x: evaluate_policy(env, policy_module, max_rollout_len)
     if args.get("train"):
         env_creator = EnvCreator(lambda: env)
         create_env_fn = [env_creator for _ in range(num_workers)]
@@ -275,9 +276,6 @@ if __name__ == "__main__":
             eval_func=eval_func 
         ) 
         
-    #######################
-    # Evaluation:
-    #######################
     if args.get("save"):
         print("Saving")
         # Save the model
@@ -285,6 +283,9 @@ if __name__ == "__main__":
             + datetime.now().strftime("%Y%m%d-%H%M%S") + ".pth")
         torch.save(value_module.state_dict(), "models/weights/ppo_value_safe_integrator" \
             + datetime.now().strftime("%Y%m%d-%H%M%S") + ".pth")
+    #######################
+    # Evaluation:
+    #######################
     if args.get("eval"):
         print("Evaluation")
         eval_logs, eval_str = evaluate_policy(env, policy_module, max_rollout_len)
@@ -292,12 +293,10 @@ if __name__ == "__main__":
     if args.get("plot_value") and args.get("plot_traj") > 0:
         print("Plotting value function")
         value_function_resolution = 10
-        value_landscape = plot_value_function_integrator(max_x1, 
+        plot_value_function_integrator(max_x1, 
                                        max_x2,
                                        value_function_resolution,
                                        value_net)
-    else:
-        value_landscape = None
     if args.get("plot_traj") > 0:
         plot_integrator_trajectories(env, 
                                     policy_module,
@@ -306,7 +305,6 @@ if __name__ == "__main__":
                                     value_net)
         print("Plotted trajectories")
     if args.get("plot_bellman_violation"):
-
         print("Calculating and plotting Bellman violation")
         obs_norm_loc = env.transform[3].loc
         obs_norm_scale = env.transform[3].scale
@@ -326,20 +324,3 @@ if __name__ == "__main__":
         plt.ylabel("x2")
         plt.savefig("results/ppo_safe_integrator_bellman_violation" +\
             datetime.now().strftime("%Y%m%d-%H%M%S") + ".pdf")
-    if args.get("plot_training"):
-        # Plot training statistics
-        print("Plotting training statistics")
-        plt.figure(figsize=(10, 10))
-        plt.subplot(2, 2, 1)
-        plt.plot(logs["reward"])
-        plt.title("training rewards (average)")
-        plt.subplot(2, 2, 2)
-        plt.plot(logs["step_count"])
-        plt.title("Max step count (training)")
-        plt.subplot(2, 2, 3)
-        plt.plot(logs["eval reward (sum)"])
-        plt.title("Return (test)")
-        plt.subplot(2, 2, 4)
-        plt.plot(logs["eval step_count"])
-        plt.title("Max step count (test)")
-        plt.savefig("results/ppo_safe_integrator_statistics.png")
