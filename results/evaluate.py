@@ -23,8 +23,7 @@ from utils.utils import reset_batched_env
 
 def evaluate_policy(env:EnvBase, 
                     policy_module:TensorDictModule,
-                    rollout_len:int, 
-                    log_wandb: bool = False):
+                    rollout_len:int) -> Tuple[Dict[str,Any],str]:
     logs = {}
     with set_exploration_type(ExplorationType.DETERMINISTIC), torch.no_grad():
         # execute a rollout with the trained policy
@@ -34,15 +33,8 @@ def evaluate_policy(env:EnvBase,
         logs["eval reward"] = (eval_rollout["next", "reward"].mean().item())
         logs["eval reward (sum)"] = eval_rollout["next", "reward"].sum().item()
         logs["eval step_count"] = (eval_rollout["step_count"].max().item())
-        eval_str = (
-            f"eval cumulative reward: {logs['eval reward (sum)']: 4.4f} "
-            f"(init: {logs['eval reward (sum)']: 4.4f}), "
-            f"eval step-count: {logs['eval step_count']}"
-        )
-        if log_wandb:
-            wandb.log({**logs})
         del eval_rollout
-    return logs, eval_str
+    return logs
 
     
 # TODO: Add functionality for multi-step evaluation of Bellman violation?
