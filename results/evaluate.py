@@ -2,7 +2,7 @@ from torchrl.data import TensorSpec
 import wandb
 import torch
 from math import ceil
-from typing import Optional, List
+from typing import Optional, List, Tuple, Dict, Any
 from torch import nn
 from tensordict import TensorDict
 from tensordict.nn import TensorDictModule
