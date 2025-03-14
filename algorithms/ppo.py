@@ -14,7 +14,6 @@ from torchrl.objectives.value import GAE
 from torchrl.envs.utils import ExplorationType
 from torchrl.objectives import ClipPPOLoss
 from tqdm import tqdm
-from results.evaluate import evaluate_policy, calculate_bellman_violation
 import wandb
 from utils.utils import get_config_value
 from .RlAlgoBase import RLAlgoBase
@@ -139,6 +138,9 @@ class PPO(RLAlgoBase):
         if self.config.get("track", False):
             wandb.log({**logs})
         else:
+            cum_reward_str = f"average reward={logs['reward']: 4.4f}"
+            stepcount_str = f"step count (max): {logs['step_count']}"
+            lr_str = f"lr policy: {logs['lr']: 4.6f}"
             eval_str = ", ".join([f"{key}: {val}" for key, val in logs.items()])
             pbar.set_description(
                 f"{cum_reward_str}, {stepcount_str}, {lr_str}, {eval_str}"
@@ -190,13 +192,8 @@ class PPO(RLAlgoBase):
         logs["loss_critic"] /= self.num_epochs
         logs["loss_entropy"] /= self.num_epochs
         logs["reward"] = tensordict_data["next", "reward"].mean().item()
-        cum_reward_str = (
-            f"average reward={logs['reward']: 4.4f}"
-        )
         logs["step_count"] = tensordict_data["step_count"].max().item()
-        stepcount_str = f"step count (max): {logs['step_count']}"
         logs["lr"] = optim.param_groups[0]["lr"]
-        lr_str = f"lr policy: {logs['lr']: 4.6f}"
         if eval_func is not None:
             logs.update(eval_func(tensordict_data))
         return logs
