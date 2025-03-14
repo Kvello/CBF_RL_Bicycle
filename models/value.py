@@ -55,7 +55,8 @@ class QuadraticSafetyValueFunction(SafetyValueFunctionBase):
                  device:torch.device=torch.device("cpu"),
                  layers:List[int] = [64,64],
                  activation:nn.Module = nn.ReLU(),
-                 eps = 1e-2):
+                 eps = 1e-2,
+                 **kwargs):
         assert layers[-1] % input_size == 0, "Last layer must be a multiple of input size"
         super().__init__()
         self.eps = eps
@@ -73,6 +74,6 @@ class QuadraticSafetyValueFunction(SafetyValueFunctionBase):
                                      self.layer_sizes[-1]//self.input_size,
                                      self.input_size)
         P_x = torch.matmul(N_x.transpose(-2,-1),N_x)
-        xPx = -torch.matmul(x_vec.transpose(-2,-1),torch.matmul(P_x,x_vec)).squeeze(-1)
-        return xPx*(1+self.eps) + self.eps
+        xPx = torch.matmul(x_vec.transpose(-2,-1),torch.matmul(P_x,x_vec)).squeeze(-1)
+        return -xPx*(1+self.eps) + self.eps
 
