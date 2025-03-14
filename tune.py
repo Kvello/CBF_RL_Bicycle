@@ -1,20 +1,20 @@
 from algorithms.ppo import PPO
 from models.factory import SafetyValueFunctionFactory
 from ray import tune
-from ray.tune.schedulers import ASHAshcheduler
+from ray.tune.schedulers import ASHAScheduler
 from ray.tune.search.hyperopt import HyperOptSearch
 
 import os
 import tempfile
 from models.policy import ProbabilisticPolicyNet
-from ray.tune import Checkpoint
-from torchrl.distributions import TanhNormal
+from ray.train import Checkpoint
+from ray.train import report
+from tensordict.nn.distributions import NormalParamExtractor
 from collections import defaultdict
 import torch
 from typing import List, Dict, Any
 from tensordict.nn import TensorDictModule
 from torch import nn
-from tensordict.nn.distributions import NormalParamExtractor
 from tensordict import TensorDict
 from torchrl.data.replay_buffers import ReplayBuffer
 from torchrl.collectors import SyncDataCollector
@@ -63,23 +63,6 @@ def create_value_net_config(config):
         "eps": config["eps"],
     }
     return value_net_config
-def ray_eval_func(data):
-    logs = defaultdict(list)
-    bm_viol = calculate_bellman_violation(
-        10,
-        value_net,
-        state_space, 
-        policy_module,
-        base_env, 
-        gamma,
-        after_batch_transform=after_batch_transform
-    )
-    # Return the mean, max, or std of the Bellman violation?
-    logs["bellman_violation_mean"] = bm_viol.flatten().mean().item()
-    logs["bellman_violation_max"] = bm_viol.flatten().max().item()
-    logs["bellman_violation_std"] = bm_viol.flatten().std().item()
-    tune.report(**logs)
-    return logs
 def tune_ppo(config):
     """Tune the PPO algorithm.
     
@@ -92,7 +75,7 @@ def tune_ppo(config):
     state_space = {"x1": {"low": -config["max_x1"], "high": config["max_x1"]},
                     "x2": {"low": -config["max_x2"], "high": config["max_x2"]}}
 
-    max_rollout_len = args.get("max_rollout_len")
+    max_rollout_len = config.get("max_rollout_len")
     parameters = TensorDict({
         "params" : TensorDict({
             "dt": config["dt"],
@@ -120,7 +103,9 @@ def tune_ppo(config):
     ).to(config["device"])
 
     env.transform[3].init_stats(num_iter=1000,reduce_dim=(0,1),cat_dim=1)
-    ppo = PPO(config)
+    ppo_instance = PPO()
+    ppo_instance.setup(config)
+
     action_high = (env.action_spec_unbatched.high if hasattr(env, "action_spec_unbatched") 
                                                     else env.action_spec.high)
     action_low = (env.action_spec_unbatched.low if hasattr(env, "action_spec_unbatched") 
@@ -130,7 +115,7 @@ def tune_ppo(config):
     # Model setup
     ###################
     value_net_config = create_value_net_config(config)
-    value_net = SafetyValueFunctionFactory(**value_net_config)
+    value_net = SafetyValueFunctionFactory.create(**value_net_config)
     value_module = ValueOperator(
         module=value_net,
         in_keys=["obs"],
@@ -152,32 +137,51 @@ def tune_ppo(config):
         return_log_prob=True,
     )
     ###################
+    # Evaluation function
+    ###################
+    def ray_eval_func(data):
+        logs = defaultdict(list)
+        bm_viol = calculate_bellman_violation(
+            10,
+            value_net,
+            state_space, 
+            policy_module,
+            base_env, 
+            config["gamma"],
+            after_batch_transform=after_batch_transform
+        )
+        # Return the mean, max, or std of the Bellman violation?
+        logs["bellman_violation_mean"] = bm_viol.flatten().mean().item()
+        logs["bellman_violation_max"] = bm_viol.flatten().max().item()
+        logs["bellman_violation_std"] = bm_viol.flatten().std().item()
+        return logs
+    ###################
     # Data collection
     ###################
     env_creator = EnvCreator(lambda: env)
-    create_env_fn = [env_creator for _ in range(config["num_workers"])]
-    collector = SyncDa(
-        create_env_fn=create_env_fn,
+    collector = SyncDataCollector(
+        create_env_fn=env_creator,
         policy=policy_module,
         frames_per_batch=config["frames_per_batch"],
         total_frames=config.get("frames_per_search", int(2**10)),
         split_trajs=False,
         device=config["device"],
-        exploration_type=ExplorationType.RANDOM,
-        cat_results=0)
+        exploration_type=ExplorationType.RANDOM)
 
     replay_buffer = ReplayBuffer(
-        storage=LazyTensorStorage(max_size=frames_per_batch,device=config["device"]),
+        storage=LazyTensorStorage(max_size=config["frames_per_batch"],device=config["device"]),
         sampler=SamplerWithoutReplacement(),
     )
     optim = torch.optim.Adam
     for i, td_data in enumerate(collector):
-        ppo.step(td_data,
+        logs = ppo_instance.step(td_data,
+                config["frames_per_batch"],
                  value_module, 
                  policy_module, 
                  optim, 
                  replay_buffer, 
                  eval_func=ray_eval_func)
+        report({"bellman_violation_std":logs["bellman_violation_std"]})
         with tempfile.TemporaryDirectory() as tmpdir:
             torch.save(
                 {
@@ -200,7 +204,6 @@ if __name__ == "__main__":
     fixed_config = {
         "input_size": 2,
         "action_size": 1,
-        "num_workers": 1,
         "entropy_eps": 0.0,
         "loss_critictype": "smooth_l1",
         "gamma": 0.99,
@@ -209,29 +212,32 @@ if __name__ == "__main__":
         "max_input": 1.0,
         "dt": 0.05,
         "device": device,
-        "frames_per_search": 2**10,
+        "frames_per_search": 2**18,
     }
     def wrapped_tune(config):
         config.update(fixed_config)
         config["batches_per_process"] = (
             max(int(2**12),config["frames_per_batch"]//config["max_rollout_len"])
         )
+        config["optim_kwargs"] = {"lr": config["lr"]}
+        del config["lr"]
         tune_ppo(config)
     search_space = {
-        "frames_per_batch": tune.randint(32, 256),
+        "frames_per_batch": tune.randint(int(2**12), int(2**18)),
         "clip_epsilon": tune.uniform(0.05, 0.3),
         "critic_coef": tune.uniform(0.1, 3.0),
         "lmbda": tune.uniform(0.1, 0.9),
         "max_rollout_len": tune.randint(8, 256),
-        "sub_batch_size": tune.qlograndint(2, 256),
+        "sub_batch_size": tune.randint(128, int(2**12)),
         "max_grad_norm": tune.uniform(0.5, 5.0),
         "lr": tune.loguniform(1e-5, 1e-1),
         "value_net_architecture": tune.choice(["feedforward", "quadratic"]),
         "net_layers": tune.randint(1, 5),
         "net_layer_size": tune.choice([32, 64, 128]),
-        "net_activation": tune.choice(["relu", "tanh","elu","leaky_relu"]),
+        "net_activation": tune.choice(["ReLU", "Tanh","ELU","LeakyReLU"]),
         "bounded_value": tune.choice([True, False]),
         "eps": tune.uniform(1e-4, 1e-1),
+        "num_epochs": tune.randint(2, 64),
     }
     scheduler = ASHAScheduler(
         metric="bellman_violation_std",
@@ -248,7 +254,7 @@ if __name__ == "__main__":
     tuner = tune.Tuner(
         wrapped_tune,
         tune_config=tune.TuneConfig(
-            num_samples=10,
+            num_samples=20,
             search_alg=hyperopt_search,
             scheduler=scheduler,
         )
@@ -264,7 +270,6 @@ if __name__ == "__main__":
     else:
         results = tune.run(
             wrapped_tune,
-            config=search_space,
             search_alg=hyperopt_search,
             scheduler=scheduler,
         )
