@@ -2,7 +2,7 @@ from torchrl.data import TensorSpec
 import wandb
 import torch
 from math import ceil
-from typing import Optional, List
+from typing import Optional, List, Tuple, Dict, Any
 from torch import nn
 from tensordict import TensorDict
 from tensordict.nn import TensorDictModule
@@ -28,11 +28,9 @@ def evaluate_policy(env:EnvBase,
     with set_exploration_type(ExplorationType.DETERMINISTIC), torch.no_grad():
         # execute a rollout with the trained policy
 
-        eval_rollout = env.rollout(rollout_len, policy_module)
-
-        logs["eval reward"] = (eval_rollout["next", "reward"].mean().item())
-        logs["eval reward (sum)"] = eval_rollout["next", "reward"].sum().item()
-        logs["eval step_count"] = (eval_rollout["step_count"].max().item())
+        eval_rollout = env.rollout(rollout_len, policy_module,break_when_any_done=False)
+        logs["eval reward(average)"] = (eval_rollout["next", "reward"].mean().item())
+        logs["eval step_count(average)"] = (eval_rollout["step_count"].to(torch.float32).mean().item())
         del eval_rollout
     return logs
 
