@@ -4,7 +4,7 @@ from typing import List, Dict, Any, Optional, Callable
 from tensordict.nn import TensorDictModule
 from tensordict import TensorDict
 from torchrl.collectors import DataCollectorBase
-from torchrl.data.replay_buffers import ReplayBuffer
+from torchrl.data.replay_buffers import TensorDictReplayBuffer
 from torchrl.envs import (
     TransformedEnv,
     EnvBase,
@@ -60,7 +60,7 @@ class PPO(RLAlgoBase):
               value_module: TensorDictModule,
               optim: torch.optim.Optimizer,
               collector: DataCollectorBase,
-              replay_buffer: ReplayBuffer,
+              replay_buffer: TensorDictReplayBuffer,
               eval_func: Optional[Callable[None, Dict[str, float]]] = None
               ):
         """Train the PPO algorithm.
@@ -70,7 +70,7 @@ class PPO(RLAlgoBase):
             value_module (TensorDictModule): The value module.
             optim (torch.optim.Optimizer): The optimizer.
             collector (DataCollectorBase): The data collector.
-            replay_buffer (ReplayBuffer): The replay buffer.
+            replay_buffer (TensorDictReplayBuffer): The replay buffer.
             An optional evaluation function that evaluates the policy in the environment
             This should be a function that takes in the policy and returns a dict of
             floats of evaluation metrics. Defaults to None.
@@ -101,7 +101,6 @@ class PPO(RLAlgoBase):
                     save_code=True,
                     name=self.config.get("experiment_name", None))
             
-        self.replay_buffer = replay_buffer
         self.advantage_module = GAE(
             gamma=self.gamma,
             lmbda=self.lmbda,
@@ -135,16 +134,16 @@ class PPO(RLAlgoBase):
                                    eval_func=eval_func))
             pbar.update(tensordict_data.numel())
             # scheduler.step()
-        if self.config.get("track", False):
-            wandb.log({**logs})
-        else:
-            cum_reward_str = f"average reward={logs['reward']: 4.4f}"
-            stepcount_str = f"step count (max): {logs['step_count']}"
-            lr_str = f"lr policy: {logs['lr']: 4.6f}"
-            eval_str = ", ".join([f"{key}: {val}" for key, val in logs.items()])
-            pbar.set_description(
-                f"{cum_reward_str}, {stepcount_str}, {lr_str}, {eval_str}"
-            )
+            if self.config.get("track", False):
+                wandb.log({**logs})
+            else:
+                cum_reward_str = f"average reward={logs['reward']: 4.4f}"
+                stepcount_str = f"step count (max): {logs['step_count']}"
+                lr_str = f"lr policy: {logs['lr']: 4.6f}"
+                eval_str = ", ".join([f"{key}: {val}" for key, val in logs.items()])
+                pbar.set_description(
+                    f"{cum_reward_str}, {stepcount_str}, {lr_str}, {eval_str}"
+                )
         if wandb.run is not None:
             wandb.finish() 
         collector.shutdown()
@@ -154,7 +153,7 @@ class PPO(RLAlgoBase):
              loss_module: TensorDictModule,
              optim: torch.optim.Optimizer,
              advantage_module: TensorDictModule,
-             replay_buffer: ReplayBuffer,
+             replay_buffer: TensorDictReplayBuffer,
              eval_func: Optional[Callable[None, Dict[str, float]]] = None):
 
         if self.config is None:
@@ -169,7 +168,21 @@ class PPO(RLAlgoBase):
             replay_buffer.extend(data_view)
             for _ in range(self.frames_per_batch // self.sub_batch_size):
                 subdata = replay_buffer.sample(self.sub_batch_size).to(self.device)
+                state_value = loss_module.critic_network(subdata)["state_value"]
+                with torch.no_grad():
+                    subdata["td_error"] = torch.abs(subdata["value_target"] - state_value)
+                    replay_buffer.update_tensordict_priority(subdata)
+                critic_loss = torch.nn.HuberLoss(reduction='none')(state_value, subdata["value_target"])
+                advantage = subdata.get("advantage", None) # Store before modifying
+                # Allow for importance sampling of the samples
+                if "_weight" in subdata:
+                    critic_loss = (subdata["_weight"] * critic_loss).mean() 
+                    # I think this is a valid way of weighting the actor loss
+                    subdata["advantage"] = subdata["advantage"]* subdata["_weight"]
+                else:
+                    critic_loss = critic_loss.mean()
                 loss_vals = loss_module(subdata)
+                loss_vals["loss_critic"] = critic_loss * self.critic_coef
                 if self.entropy_eps == 0.0:
                     loss_vals["loss_entropy"] = torch.tensor(0.0).to(self.device)
                 loss_value = (
@@ -188,11 +201,14 @@ class PPO(RLAlgoBase):
                                                self.max_grad_norm)
                 optim.step()
                 optim.zero_grad()
+                # Restore the advantage. I assume the subdata is a reference to the replay
+                # buffer data, so we need to restore the original advantage values
+                subdata["advantage"] = advantage
         logs["loss_objective"] /= self.num_epochs
         logs["loss_critic"] /= self.num_epochs
         logs["loss_entropy"] /= self.num_epochs
         logs["reward"] = tensordict_data["next", "reward"].mean().item()
-        logs["step_count"] = tensordict_data["step_count"].max().item()
+        logs["step_count(average)"] = tensordict_data["step_count"].to(torch.float32).mean().item()
         logs["lr"] = optim.param_groups[0]["lr"]
         if eval_func is not None:
             logs.update(eval_func(tensordict_data))
