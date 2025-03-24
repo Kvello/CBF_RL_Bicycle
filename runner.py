@@ -77,17 +77,17 @@ if __name__ == "__main__":
     max_x1 = 1.0
     max_x2 = 1.0
     dt = 0.05
-    frames_per_batch = int(2**17)
-    lr = 1e-5
+    frames_per_batch = int(2**12)
+    lr = 5e-5
     max_grad_norm = 1.0
-    total_frames = int(2**22)
-    num_epochs = 50  # optimization steps per batch of data collected
+    total_frames = int(2**20)
+    num_epochs = 10  # optimization steps per batch of data collected
     clip_epsilon = (
         0.2  # clip value for PPO loss: see the equation in the intro for more context.
     )
-    critic_coef = 0.1
+    critic_coef = 1.0
     loss_critic_type = "smooth_l1"
-    sub_batch_size = int(2**10)
+    sub_batch_size = int(2**8)
     lmbda = 0.95
     entropy_eps = 0.0
     value_net_config = {
@@ -151,7 +151,7 @@ if __name__ == "__main__":
         )
     ).to(device)
     env.transform[3].init_stats(num_iter=1000,reduce_dim=(0,1),cat_dim=1)
-    gamma = 0.99
+    gamma = 0.95
     #######################
     # Arguments:
     #######################
@@ -187,6 +187,10 @@ if __name__ == "__main__":
                                                             else env.observation_space.shape[0])
     actor_net = nn.Sequential(
         nn.Linear(observation_size_unbatched, num_cells,device=device),
+        nn.ReLU(),
+        nn.Linear(num_cells, num_cells,device=device),
+        nn.ReLU(),
+        nn.Linear(num_cells, num_cells,device=device),
         nn.ReLU(),
         nn.Linear(num_cells,2 * env.action_spec.shape[-1], device=device),
         NormalParamExtractor(),
