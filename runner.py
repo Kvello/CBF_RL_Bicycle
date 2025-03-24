@@ -6,10 +6,10 @@ from tensordict.nn import TensorDictModule
 from torch import nn
 from tensordict.nn.distributions import NormalParamExtractor
 from tensordict import TensorDict
-from torchrl.data.replay_buffers import ReplayBuffer
+from torchrl.data.replay_buffers import TensorDictReplayBuffer
 from torchrl.collectors import MultiSyncDataCollector
 from torchrl.data.replay_buffers.storages import LazyTensorStorage
-from torchrl.data.replay_buffers.samplers import SamplerWithoutReplacement
+from torchrl.data.replay_buffers.samplers import SamplerWithoutReplacement, PrioritizedSampler
 from torchrl.envs import (
     Compose,
     DoubleToFloat,
@@ -77,17 +77,17 @@ if __name__ == "__main__":
     max_x1 = 1.0
     max_x2 = 1.0
     dt = 0.05
-    frames_per_batch = int(2**17)
-    lr = 1e-5
+    frames_per_batch = int(2**12)
+    lr = 5e-5
     max_grad_norm = 1.0
-    total_frames = int(2**21)
-    num_epochs = 20  # optimization steps per batch of data collected
+    total_frames = int(2**20)
+    num_epochs = 10  # optimization steps per batch of data collected
     clip_epsilon = (
         0.2  # clip value for PPO loss: see the equation in the intro for more context.
     )
     critic_coef = 1.0
     loss_critic_type = "smooth_l1"
-    sub_batch_size = int(2**10)
+    sub_batch_size = int(2**8)
     lmbda = 0.95
     entropy_eps = 0.0
     value_net_config = {
@@ -97,7 +97,7 @@ if __name__ == "__main__":
         "activation": nn.ReLU(),
         "device": device,
         "input_size": 2,
-        "bounded": False,
+        "bounded": True,
     }
         
     #######################
@@ -151,7 +151,7 @@ if __name__ == "__main__":
         )
     ).to(device)
     env.transform[3].init_stats(num_iter=1000,reduce_dim=(0,1),cat_dim=1)
-    gamma = 0.99
+    gamma = 0.95
     #######################
     # Arguments:
     #######################
@@ -170,6 +170,8 @@ if __name__ == "__main__":
     args["optim_kwargs"] = {"lr": lr}
     args["bellman_eval_res"] = 10
     args["state_space"] = state_space
+    args["alpha"] = 0.8
+    args["beta"] = 1.0
     
     
     #######################
@@ -185,7 +187,11 @@ if __name__ == "__main__":
                                                             else env.observation_space.shape[0])
     actor_net = nn.Sequential(
         nn.Linear(observation_size_unbatched, num_cells,device=device),
-        nn.Tanh(),
+        nn.ReLU(),
+        nn.Linear(num_cells, num_cells,device=device),
+        nn.ReLU(),
+        nn.Linear(num_cells, num_cells,device=device),
+        nn.ReLU(),
         nn.Linear(num_cells,2 * env.action_spec.shape[-1], device=device),
         NormalParamExtractor(),
     )
@@ -259,10 +265,16 @@ if __name__ == "__main__":
             exploration_type=ExplorationType.RANDOM,
             cat_results=0)
 
-        replay_buffer = ReplayBuffer(
-            storage=LazyTensorStorage(max_size=frames_per_batch,device=device),
-            sampler=SamplerWithoutReplacement(),
+        replay_buffer = TensorDictReplayBuffer(
+            storage=LazyTensorStorage(max_size=frames_per_batch),
+            sampler=PrioritizedSampler(max_capacity=frames_per_batch,
+                                        alpha=args.get("alpha",0.6),
+                                        beta=args.get("beta",0.4)),
         )
+        # replay_buffer = TensorDictReplayBuffer(
+        #     storage=LazyTensorStorage(max_size=frames_per_batch),
+        #     sampler=SamplerWithoutReplacement(),
+        # )
         optim = torch.optim.Adam
         # scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
         #     optim, total_frames // frames_per_batch, 1e-8
@@ -288,7 +300,8 @@ if __name__ == "__main__":
     #######################
     if args.get("eval"):
         print("Evaluation")
-        eval_logs, eval_str = evaluate_policy(env, policy_module, max_rollout_len)
+        eval_logs = evaluate_policy(env, policy_module, max_rollout_len)
+        eval_str = ",".join([f"{key}: {val}" for key,val in eval_logs.items()])
         print(eval_str)
     if args.get("plot_value") and args.get("plot_traj") > 0:
         print("Plotting value function")
