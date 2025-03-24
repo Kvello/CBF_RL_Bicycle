@@ -90,7 +90,7 @@ if __name__ == "__main__":
     sub_batch_size = int(2**8)
     lmbda = 0.95
     entropy_eps = 0.0
-    value_net_config = {
+    nn_net_config = {
         "name": "feedforward",
         "eps": 1e-2,
         "layers": [64, 64],
@@ -185,16 +185,16 @@ if __name__ == "__main__":
                                                     else env.action_spec.low)
     observation_size_unbatched = (env.obs_size_unbatched if hasattr(env, "obs_size_unbatched") 
                                                             else env.observation_space.shape[0])
-    actor_net = nn.Sequential(
-        nn.Linear(observation_size_unbatched, num_cells,device=device),
-        nn.ReLU(),
-        nn.Linear(num_cells, num_cells,device=device),
-        nn.ReLU(),
-        nn.Linear(num_cells, num_cells,device=device),
-        nn.ReLU(),
-        nn.Linear(num_cells,2 * env.action_spec.shape[-1], device=device),
-        NormalParamExtractor(),
-    )
+
+
+    actor_net = nn.Sequential()
+    layers = [observation_size_unbatched] + nn_net_config["layers"] + [2*env.action_spec.shape[-1]]
+    for i in range(len(nn_net_config["layers"])-1):
+        actor_net.add_module(f"layer_{i}", nn.Linear(layers[i], layers[i + 1]),device=device)
+        actor_net.add_module(f"activation_{i}", nn_net_config["activation"])
+    actor_net.add_module(f"layer_{len(nn_net_config['layers'])-1}", 
+                         nn.Linear(layers[-2], layers[-1]))
+    actor_net.add_module("param_extractor", NormalParamExtractor())
 
 
     policy_module = ProbabilisticActor(
@@ -214,7 +214,7 @@ if __name__ == "__main__":
         policy_module.load_state_dict(torch.load(args.get("load_policy")))
         print("Policy loaded")
 
-    value_net = SafetyValueFunctionFactory.create(**value_net_config)
+    value_net = SafetyValueFunctionFactory.create(**nn_net_config)
     value_module = ValueOperator(
         module=value_net,
         in_keys=["obs"],
