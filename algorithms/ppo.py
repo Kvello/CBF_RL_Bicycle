@@ -20,7 +20,7 @@ from .RlAlgoBase import RLAlgoBase
 import warnings
 
 
-class PPO(RLAlgoBase):
+class HierarchicalPPO(RLAlgoBase):
     def __init__(self):
         super().__init__()
     def setup(self, config: Dict[str, Any]):
@@ -57,7 +57,8 @@ class PPO(RLAlgoBase):
 
     def train(self,
               policy_module: TensorDictModule,
-              value_module: TensorDictModule,
+              V_primary: TensorDictModule,
+              V_secondary: TensorDictModule,
               optim: torch.optim.Optimizer,
               collector: DataCollectorBase,
               replay_buffer: TensorDictReplayBuffer,
@@ -102,15 +103,22 @@ class PPO(RLAlgoBase):
                     name=self.config.get("experiment_name", None),
                     config = self.config)
             
-        self.advantage_module = GAE(
+        self.A_primary = GAE(
             gamma=self.gamma,
             lmbda=self.lmbda,
-            value_network=value_module,
+            value_network=V_primary,
+            average_gae=True,
+            device=self.device,
+        )
+        self.A_secondary = GAE(
+            gamma=self.gamma,
+            lmbda=self.lmbda,
+            value_network=V_secondary,
             average_gae=True,
             device=self.device,
         )
 
-        self.loss_module = ClipPPOLoss(
+        self.primary_loss = ClipPPOLoss(
             actor_network=policy_module,
             critic_network=value_module,
             clip_epsilon=self.clip_epsilon,
@@ -119,6 +127,16 @@ class PPO(RLAlgoBase):
             critic_coef=self.critic_coef,
             loss_critic_type=self.loss_critictype,
         )
+        self.secondary_loss = ClipPPOLoss(
+            actor_network=policy_module,
+            critic_network=value_module,
+            clip_epsilon=self.clip_epsilon,
+            entropy_bonus=bool(self.entropy_eps),
+            entropy_coef=self.entropy_eps,
+            critic_coef=self.critic_coef,
+            loss_critic_type=self.loss_critictype,
+        )
+
         self.optim = optim(self.loss_module.parameters(), **self.config.get("optim_kwargs", {}))
 
         print("Training with config:")
