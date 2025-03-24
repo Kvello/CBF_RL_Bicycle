@@ -99,7 +99,8 @@ class PPO(RLAlgoBase):
                     sync_tensorboard=True,
                     monitor_gym=True,
                     save_code=True,
-                    name=self.config.get("experiment_name", None))
+                    name=self.config.get("experiment_name", None),
+                    config = self.config)
             
         self.advantage_module = GAE(
             gamma=self.gamma,
