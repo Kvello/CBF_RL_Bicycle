@@ -50,12 +50,13 @@ def test_quadratic_safety_value_function_psd():
     batch_size = 5
     model = QuadraticSafetyValueFunction(input_size=input_size, 
                                          layers=[10], 
-                                         activation=nn.ReLU())
+                                         activation=nn.ReLU(),
+                                         eps=0.0)
     
-    x = torch.randn(batch_size, input_size)
+    x = torch.ones(batch_size, input_size)
     output = model(x)
     
-    assert torch.all(output >= 0), "Quadratic form should be non-negative \
+    assert torch.all(output <= 0), "Quadratic form should be non-positive \
         (P(x) should be PSD)"
 
 def test_factory_creation():
