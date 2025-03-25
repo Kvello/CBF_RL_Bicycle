@@ -116,10 +116,10 @@ class HierarchicalPPO(RLAlgoBase):
             device=self.device,
         )
         self.A_primary.set_keys(
-            reward_key=self.primary_reward_key,
-            advantage_key="A1",
-            value_target_key="V1_target",
-            value_key=V_primary.out_keys[0]
+            reward=self.primary_reward_key,
+            advantage="A1",
+            value_target="V1_target",
+            value=V_primary.out_keys[0]
         )
         self.A_secondary = GAE(
             gamma=self.gamma,
@@ -129,10 +129,10 @@ class HierarchicalPPO(RLAlgoBase):
             device=self.device,
         )
         self.A_secondary.set_keys(
-            reward_key=self.secondary_reward_key,
-            advantage_key="A2",
-            value_target_key="V2_target",
-            value_key=V_secondary.out_keys[0]
+            reward=self.secondary_reward_key,
+            advantage="A2",
+            value_target="V2_target",
+            value=V_secondary.out_keys[0]
         )
 
         # Could probably just write a custom loss function at this point, but 
@@ -140,7 +140,7 @@ class HierarchicalPPO(RLAlgoBase):
         # Need to figure out if I should set separate_losses to True or not
         self.primary_loss = ClipPPOLoss(
             actor_network=policy_module,
-            critic_network=value_module,
+            critic_network=V_primary,
             clip_epsilon=self.clip_epsilon,
             entropy_bonus=False,
             entropy_coef=0.0,
@@ -148,14 +148,14 @@ class HierarchicalPPO(RLAlgoBase):
             loss_critic_type=self.loss_critictype,
         )
         self.primary_loss.set_keys(
-            advantage_key="A1",
-            value_key=V_primary.out_keys[0],
-            value_target_key="V1_target",
-            reward_key=self.primary_reward_key,
+            advantage="A1",
+            value=V_primary.out_keys[0],
+            value_target="V1_target",
+            reward=self.primary_reward_key,
         )
         self.secondary_loss = ClipPPOLoss(
             actor_network=policy_module,
-            critic_network=value_module,
+            critic_network=V_secondary,
             clip_epsilon=self.clip_epsilon,
             entropy_bonus=False,
             entropy_coef=0.0,
@@ -163,10 +163,10 @@ class HierarchicalPPO(RLAlgoBase):
             loss_critic_type=self.loss_critictype,
         )
         self.secondary_loss.set_keys(
-            advantage_key="A2",
-            value_key=V_secondary.out_keys[0],
-            value_target_key="V2_target",
-            reward_key=self.secondary_reward_key,
+            advantage="A2",
+            value=V_secondary.out_keys[0],
+            value_target="V2_target",
+            reward=self.secondary_reward_key,
         )
 
         self.optim = optim(

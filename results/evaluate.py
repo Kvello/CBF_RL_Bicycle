@@ -21,18 +21,24 @@ from torchrl.envs import (
 )
 from utils.utils import reset_batched_env
 
-def evaluate_policy(env:EnvBase, 
-                    policy_module:TensorDictModule,
-                    rollout_len:int) -> Tuple[Dict[str,Any],str]:
-    logs = {}
-    with set_exploration_type(ExplorationType.DETERMINISTIC), torch.no_grad():
-        # execute a rollout with the trained policy
-
-        eval_rollout = env.rollout(rollout_len, policy_module,break_when_any_done=False)
-        logs["eval reward(average)"] = (eval_rollout["next", "reward"].mean().item())
-        logs["eval step_count(average)"] = (eval_rollout["step_count"].to(torch.float32).mean().item())
-        del eval_rollout
-    return logs
+class PolicyEvaluator:
+    def __init__(self, 
+                 env:EnvBase, 
+                 policy_module:TensorDictModule,
+                 keys_to_log:List[str] = ["reward","step_count"],
+                 rollout_len:int = 1000):
+        self.env = env
+        self.policy_module = policy_module
+        self.keys_to_log = keys_to_log
+    def evaluate_policy(self) -> Dict[str,Any]:
+        logs = {}
+        with set_exploration_type(ExplorationType.DETERMINISTIC), torch.no_grad():
+            # execute a rollout with the trained policy
+            eval_rollout = self.env.rollout(rollout_len, self.policy_module,break_when_any_done=False)
+            for key in self.keys_to_log:
+                logs[f"eval {key}(average)"] = (eval_rollout["next", key].to(torch.float32).mean().item())
+            del eval_rollout
+        return logs
 
     
 # TODO: Add functionality for multi-step evaluation of Bellman violation?

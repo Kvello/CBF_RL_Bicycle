@@ -23,38 +23,6 @@ from matplotlib.ticker import MaxNLocator
 from math import ceil
 from datetime import datetime
 
-class MultiObjectiveDoubleIntegratorEnv(SafeDoubleIntegratorEnv):
-    """Stateless environment for discrete double integrator with two reward signals.
-    One encouraging safety, the other any other type of goal.
-        
-        The state is [x, x_dot] and the action is [u].
-        The continous dynamics are:
-        x1_dot = x2
-        x2_dot = u
-        The discrete time dynamics can be discretized exactly by assuing zero-order hold:
-        x1_new = x1 + x2*dt + 0.5*u*dt^2
-        x2_new = x2 + u*dt
-
-        The safety constraint is that the state should be within the box 
-        [-max_x1, max_x1]x[-max_x2, max_x2]
-        The input constraints are u in [-max_input, max_input]
-    """
-    def __init__(self, 
-                 secondary_reward_func:Callable[[float,float],float],
-                 td_params=None, 
-                 seed=None, 
-                 device=None,
-                 primary_reward_key:Optional[str] = "r1",
-                 secondary_reward_key:Optional[str] = "r2"):
-        super().__init__(td_params=td_params, seed=seed, device=device)
-        self.secondary_reward_func = secondary_reward_func
-        self.primary_reward_key = primary_reward_key
-        self.secondary_reward_key = secondary_reward_key
-    @classmethod
-    def _step(cls, tensordict: TensorDict):
-        out = super()._step(tensordict)
-        out[cls.primary_reward_key] = out["reward"]
-        out[cls.secondary_reward_key] = cls.secondary_reward_func(out["x1"],out["x2"])
         
 class SafeDoubleIntegratorEnv(EnvBase):
     """Stateless environment for discrete double integrator.
@@ -373,3 +341,64 @@ def plot_value_function_integrator(max_x1:float, max_x2:float,
     ax.set_title("Value function landscape")
     fig.colorbar(surf)
     plt.savefig("results/value_function_landscape" + datetime.now().strftime("%Y%m%d-%H%M%S") + ".pdf")
+
+class MultiObjectiveDoubleIntegratorEnv(SafeDoubleIntegratorEnv):
+    """Stateless environment for discrete double integrator with two reward signals.
+    One encouraging safety, the other any other type of goal.
+        
+        The state is [x, x_dot] and the action is [u].
+        The continous dynamics are:
+        x1_dot = x2
+        x2_dot = u
+        The discrete time dynamics can be discretized exactly by assuing zero-order hold:
+        x1_new = x1 + x2*dt + 0.5*u*dt^2
+        x2_new = x2 + u*dt
+
+        The safety constraint is that the state should be within the box 
+        [-max_x1, max_x1]x[-max_x2, max_x2]
+        The input constraints are u in [-max_input, max_input]
+    """
+    primary_reward_key = "r1"
+    secondary_reward_key = "r2"
+    secondary_reward_func = lambda x1,x2: torch.zeros_like(x1)
+    def __init__(self, 
+                 td_params=None, 
+                 seed=None, 
+                 device=None):
+        super().__init__(td_params=td_params, seed=seed, device=device)
+    @classmethod
+    def set_reward_keys(cls, primary_reward_key:str, secondary_reward_key:str):
+        cls.primary_reward_key = primary_reward_key
+        cls.secondary_reward_key = secondary_reward_key
+    @classmethod
+    def set_secondary_reward_func(cls, secondary_reward_func:Callable):
+        cls.secondary_reward_func = secondary_reward_func
+    @classmethod
+    def _step(cls, tensordict: TensorDict)->TensorDict:
+        out = super()._step(tensordict)
+        r1 = out["reward"].clone()
+        r2 = torch.as_tensor(cls.secondary_reward_func(out["x1"],out["x2"]))
+        r2.view_as(r1)
+        print("x1 shape",out["x1"].shape)
+        print("reward shape",r1.shape)
+        print("r2 shape",r2.shape)
+        new_vals = TensorDict({
+            cls.primary_reward_key: r1,
+            cls.secondary_reward_key: r2,
+        },out.batch_size)
+        out.update(new_vals)
+        return out
+    def _make_spec(self, td_params:TensorDictBase):
+        super()._make_spec(td_params)
+        base_reward_spec = self.reward_spec
+        self.reward_spec = CompositeSpec(
+            {
+                "reward": base_reward_spec,
+                self.primary_reward_key: base_reward_spec,
+                self.secondary_reward_key: UnboundedContinuousTensorSpec(
+                    shape=(*td_params.shape,1),
+                    dtype=torch.float32
+                )
+            },
+            shape=td_params.shape,
+        )
