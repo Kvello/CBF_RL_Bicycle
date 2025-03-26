@@ -198,7 +198,7 @@ if __name__ == "__main__":
     for i in range(len(layers)-1):
         actor_net.add_module(f"layer_{i}", nn.Linear(layers[i], layers[i + 1],device=device))
         actor_net.add_module(f"activation_{i}", nn_net_config["activation"])
-    actor_net.add_module("output", nn.Linear(layers[-1], 2*env.action_spec.shape[-1]))
+    actor_net.add_module("output", nn.Linear(layers[-1], 2*env.action_spec.shape[-1],device=device))
     actor_net.add_module("param_extractor", NormalParamExtractor())
 
 
