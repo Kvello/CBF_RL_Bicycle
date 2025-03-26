@@ -32,7 +32,8 @@ from results.evaluate import PolicyEvaluator, calculate_bellman_violation
 from utils.utils import reset_batched_env   
 import wandb
 from models.factory import SafetyValueFunctionFactory
-from algorithms.ppo import HierarchicalPPO as HiPPO
+from algorithms.hippo import HierarchicalPPO as HiPPO
+from algorithms.ppo import PPO
 
 
 multiprocessing.set_start_method("spawn", force=True)
@@ -81,7 +82,7 @@ if __name__ == "__main__":
     frames_per_batch = int(2**12)
     lr = 5e-5
     max_grad_norm = 1.0
-    total_frames = int(2**23)
+    total_frames = int(2**20)
     num_epochs = 10  # optimization steps per batch of data collected
     clip_epsilon = (
         0.2  # clip value for PPO loss: see the equation in the intro for more context.
