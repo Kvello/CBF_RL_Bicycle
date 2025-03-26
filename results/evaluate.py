@@ -83,17 +83,14 @@ def calculate_bellman_violation(resolution:int,
         before the batch transformation. Default is empty list.
     """
     dim = len(state_space)
-    device = torch.device("cpu")
-    # Evaluate on cpu
-    value_net.to(device)
-    policy_module.to(device)
+    device = value_net.device
     linspaces = [torch.linspace(state_space[state_name]["low"],
                                 state_space[state_name]["high"],
                                 ceil(resolution*(state_space[state_name]["high"]-\
                                     state_space[state_name]["low"])))
                  for state_name in state_space]
     mesh = torch.meshgrid(*linspaces,indexing="xy")
-    inputs = torch.stack([m.flatten() for m in mesh],dim=-1)
+    inputs = torch.stack([m.flatten() for m in mesh],dim=-1).to(device)
     batch_size = inputs.shape[0]
     transforms = [*before_batch_transform,
                   BatchSizeTransform(batch_size=[batch_size],
@@ -105,20 +102,20 @@ def calculate_bellman_violation(resolution:int,
         base_env,
         Compose(*transforms)
     )
-    td = env.gen_params(device=device,batch_size=[inputs.shape[0]])
+    td = env.gen_params(batch_size=[inputs.shape[0]])
     td = env.reset(td)
     for i, state_name in enumerate(state_space):
         td[state_name] = inputs[...,i]
     if state_group_name is not None:
         td[state_group_name] = torch.stack([td[state_name] for state_name in state_space],
                                           dim=-1)
-    values = value_net(inputs).cpu().detach().numpy()
+    values = value_net(inputs).detach()
     with set_exploration_type(ExplorationType.DETERMINISTIC), torch.no_grad():
         td = env.step(policy_module(td))
         td_next = step_mdp(td)
-        next_values = value_net(td_next["obs"])
+        next_values = value_net(td_next["obs"]).detach()
     costs = -td["next","reward"]
     done = td_next["done"]
     bellman_violation_tensor = (costs + gamma*next_values*~done - values).abs()
     bellman_violation_tensor = bellman_violation_tensor.reshape(mesh[0].shape)
-    return bellman_violation_tensor
+    return bellman_violation_tensor.cpu().numpy()
