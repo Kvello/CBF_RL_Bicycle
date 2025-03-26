@@ -234,7 +234,7 @@ if __name__ == "__main__":
     for i in range(len(layers)-1):
         value_net.add_module(f"layer_{i}", nn.Linear(layers[i], layers[i + 1],device=device))
         value_net.add_module(f"activation_{i}", nn_net_config["activation"])
-    value_net.add_module("output", nn.Linear(layers[-1], 1))
+    value_net.add_module("output", nn.Linear(layers[-1], 1,device=device))
     value_module = ValueOperator(
         module=value_net,
         in_keys=["obs"],
