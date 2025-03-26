@@ -155,11 +155,15 @@ class SafeDoubleIntegratorEnv(EnvBase):
         # That means that when an action makes the next state unsafe, this will
         # only be detected in the next step, and we won't set termiated to True immeadiately
         # This is a design choice, and can be changed if needed
+        params = tensordict["params"]
         costs = torch.zeros_like(x1)
-        costs = torch.where(cls.constraints_satisfied(x1, x2), costs, 
-                            torch.tensor(1.0,device=x1.device))
+        costs = torch.where(
+            SafeDoubleIntegratorEnv.constraints_satisfied(params,x1, x2), 
+            costs, 
+            torch.tensor(1.0,device=x1.device)
+        )
 
-        dt = tensordict["params", "dt"]
+        dt = params["dt"]
         # Unpack state and action
 
         x1_new = x1 + x2*dt + 0.5*u*dt**2
@@ -207,9 +211,23 @@ class SafeDoubleIntegratorEnv(EnvBase):
             },
         batch_size=batch_size)
         return out
-    @classmethod
-    def constraints_satisfied(cls, x1:torch.Tensor, x2:torch.Tensor)->torch.Tensor:
-        return (x1 >= -1) & (x1 <= 1) & (x2 >= -1) & (x2 <= 1)
+    @staticmethod
+    def constraints_satisfied(params:TensorDict, 
+                              x1:torch.Tensor, 
+                              x2:torch.Tensor)->torch.Tensor:
+        """Returns a boolean tensor indicating whether the constraints are satisfied
+        
+        Args:
+            params (TensorDict): The parameters of the environment
+            x1 (torch.Tensor): The state x1
+            x2 (torch.Tensor): The state x2
+            
+        Returns:
+            torch.Tensor: A boolean tensor indicating whether the constraints are satisfied
+        """
+        max_x1 = params["max_x1"]
+        max_x2 = params["max_x2"]
+        return (x1 >= -max_x1) & (x1 <= max_x1) & (x2 >= -max_x2) & (x2 <= max_x2)
 
     @property
     def obs_size_unbatched(self):
@@ -358,30 +376,27 @@ class MultiObjectiveDoubleIntegratorEnv(SafeDoubleIntegratorEnv):
         [-max_x1, max_x1]x[-max_x2, max_x2]
         The input constraints are u in [-max_input, max_input]
     """
-    primary_reward_key = "r1"
-    secondary_reward_key = "r2"
-    secondary_reward_func = lambda x1,x2: torch.zeros_like(x1)
+    primary_reward_key:str = "r1"
+    secondary_reward_key:str = "r2"
     def __init__(self, 
                  td_params=None, 
                  seed=None, 
                  device=None):
         super().__init__(td_params=td_params, seed=seed, device=device)
     @classmethod
-    def set_reward_keys(cls, primary_reward_key:str, secondary_reward_key:str):
-        cls.primary_reward_key = primary_reward_key
-        cls.secondary_reward_key = secondary_reward_key
-    @classmethod
-    def set_secondary_reward_func(cls, secondary_reward_func:Callable):
-        cls.secondary_reward_func = secondary_reward_func
+    # For some reason creating the secondary reward function as a modifiable class attribute 
+    # does not work with the multisync collector. Instead, the collecor uses the default function
+    # regardless of modifications to the class attribute. Therefore, the function is
+    # defined as a static method and called from the step method.
+    @staticmethod
+    def _secondary_reward_func(x1:torch.Tensor, x2:torch.Tensor)->torch.Tensor:
+        return x1*x2
     @classmethod
     def _step(cls, tensordict: TensorDict)->TensorDict:
         out = super()._step(tensordict)
         r1 = out["reward"].clone()
-        r2 = torch.as_tensor(cls.secondary_reward_func(out["x1"],out["x2"]))
-        r2.view_as(r1)
-        print("x1 shape",out["x1"].shape)
-        print("reward shape",r1.shape)
-        print("r2 shape",r2.shape)
+        r2 = torch.as_tensor(cls._secondary_reward_func(out["x1"],out["x2"]))
+        r2 = r2.view_as(r1).to(torch.float32)
         new_vals = TensorDict({
             cls.primary_reward_key: r1,
             cls.secondary_reward_key: r2,

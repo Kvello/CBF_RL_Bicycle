@@ -30,13 +30,19 @@ class PolicyEvaluator:
         self.env = env
         self.policy_module = policy_module
         self.keys_to_log = keys_to_log
+        self.rollout_len = rollout_len
     def evaluate_policy(self) -> Dict[str,Any]:
         logs = {}
         with set_exploration_type(ExplorationType.DETERMINISTIC), torch.no_grad():
             # execute a rollout with the trained policy
-            eval_rollout = self.env.rollout(rollout_len, self.policy_module,break_when_any_done=False)
+            eval_rollout = self.env.rollout(
+                self.rollout_len, self.policy_module,break_when_any_done=False
+            )
             for key in self.keys_to_log:
-                logs[f"eval {key}(average)"] = (eval_rollout["next", key].to(torch.float32).mean().item())
+                if key in eval_rollout["next"]:
+                    logs[f"eval {key}(average)"] = (eval_rollout["next", key].to(torch.float32).mean().item())
+                elif key in eval_rollout:
+                    logs[f"eval {key}(average)"] = (eval_rollout[key].to(torch.float32).mean().item())
             del eval_rollout
         return logs
 

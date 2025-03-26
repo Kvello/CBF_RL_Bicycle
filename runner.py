@@ -81,7 +81,7 @@ if __name__ == "__main__":
     frames_per_batch = int(2**12)
     lr = 5e-5
     max_grad_norm = 1.0
-    total_frames = int(2**20)
+    total_frames = int(2**23)
     num_epochs = 10  # optimization steps per batch of data collected
     clip_epsilon = (
         0.2  # clip value for PPO loss: see the equation in the intro for more context.
@@ -104,11 +104,12 @@ if __name__ == "__main__":
     #######################
     # Parallelization:
     #######################
+    max_rollout_len = args.get("max_rollout_len")
     if device.type == "cuda":
-        batches_per_process = int(2**12)
+        batches_per_process = int(frames_per_batch / (max_rollout_len))
         num_workers = 1
     else:
-        batches_per_process = int(2**12)
+        batches_per_process = int(frames_per_batch / (max_rollout_len))
         num_workers = 1
 
     multiprocessing.set_start_method("spawn", force=True)
@@ -121,7 +122,6 @@ if __name__ == "__main__":
     state_space = {"x1": {"low": -max_x1, "high": max_x1},
                     "x2": {"low": -max_x2, "high": max_x2}}
 
-    max_rollout_len = args.get("max_rollout_len")
     parameters = TensorDict({
         "params" : TensorDict({
             "dt": dt,
@@ -135,7 +135,7 @@ if __name__ == "__main__":
     #######################
     # Arguments:
     #######################
-    args["gamma"] = 0.95
+    args["gamma"] = 0.97
     args["num_epochs"] = num_epochs
     args["frames_per_batch"] = frames_per_batch
     args["sub_batch_size"] = sub_batch_size
@@ -150,7 +150,9 @@ if __name__ == "__main__":
     args["optim_kwargs"] = {"lr": lr}
     args["bellman_eval_res"] = 10
     args["state_space"] = state_space
-    args["alpha"] = 0.8
+    # P(i) = p_i^alpha / sum(p_i^alpha)
+    # w(i) = 1/(N*P(i))^beta
+    args["alpha"] = 0.0
     args["beta"] = 1.0
     args["primary_reward_key"] = "r1"
     args["secondary_reward_key"] = "r2"
@@ -158,12 +160,8 @@ if __name__ == "__main__":
     #######################
     # Environment:
     #######################
-    secondary_reward_func = lambda x1,x2: torch.abs(x1*x2)
     base_env = MultiObjectiveDoubleIntegratorEnv(device=device,
                                                  td_params=parameters)
-    base_env.set_reward_keys(primary_reward_key=args.get("primary_reward_key"),
-                                secondary_reward_key=args.get("secondary_reward_key"))
-    base_env.set_secondary_reward_func(secondary_reward_func) 
     after_batch_transform = [
             UnsqueezeTransform(in_keys=["x1", "x2"], dim=-1,in_keys_inv=["x1","x2"]),
             CatTensors(in_keys =["x1", "x2"], out_key= "obs",del_keys=False,dim=-1),
@@ -196,12 +194,11 @@ if __name__ == "__main__":
 
 
     actor_net = nn.Sequential()
-    layers = [observation_size_unbatched] + nn_net_config["layers"] + [2*env.action_spec.shape[-1]]
-    for i in range(len(nn_net_config["layers"])-1):
+    layers = [observation_size_unbatched] + nn_net_config["layers"] 
+    for i in range(len(layers)-1):
         actor_net.add_module(f"layer_{i}", nn.Linear(layers[i], layers[i + 1],device=device))
         actor_net.add_module(f"activation_{i}", nn_net_config["activation"])
-    actor_net.add_module(f"layer_{len(nn_net_config['layers'])-1}", 
-                         nn.Linear(layers[-2], layers[-1]))
+    actor_net.add_module("output", nn.Linear(layers[-1], 2*env.action_spec.shape[-1]))
     actor_net.add_module("param_extractor", NormalParamExtractor())
 
 
@@ -233,12 +230,11 @@ if __name__ == "__main__":
         print("CBF network loaded") 
 
     value_net = nn.Sequential()
-    layers = [observation_size_unbatched] + nn_net_config["layers"] + [1]
-    for i in range(len(nn_net_config["layers"])-1):
+    layers = [observation_size_unbatched] + nn_net_config["layers"]
+    for i in range(len(layers)-1):
         value_net.add_module(f"layer_{i}", nn.Linear(layers[i], layers[i + 1],device=device))
         value_net.add_module(f"activation_{i}", nn_net_config["activation"])
-    value_net.add_module(f"layer_{len(nn_net_config['layers'])-1}",
-                            nn.Linear(layers[-2], layers[-1]))
+    value_net.add_module("output", nn.Linear(layers[-1], 1))
     value_module = ValueOperator(
         module=value_net,
         in_keys=["obs"],

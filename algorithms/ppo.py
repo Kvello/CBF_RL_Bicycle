@@ -192,12 +192,19 @@ class HierarchicalPPO(RLAlgoBase):
             if self.config.get("track", False):
                 wandb.log({**logs})
             else:
-                cum_reward_str = f"average reward={logs['reward']: 4.4f}"
+                cum_primary_reward_str = \
+                    f"average primary reward={logs[self.primary_reward_key]: 4.4f}"
+                cum_secondary_reward_str = \
+                    f"average secondary reward={logs[self.secondary_reward_key]: 4.4f}"
                 stepcount_str = f"step count (max): {logs['step_count']}"
                 lr_str = f"lr policy: {logs['lr']: 4.6f}"
                 eval_str = ", ".join([f"{key}: {val}" for key, val in logs.items()])
                 pbar.set_description(
-                    f"{cum_reward_str}, {stepcount_str}, {lr_str}, {eval_str}"
+                    f"{cum_primary_reward_str},\
+                    {cum_secondary_reward_str},\
+                    {stepcount_str}, \
+                    {lr_str}, \
+                    {eval_str}"
                 )
         if wandb.run is not None:
             wandb.finish() 
@@ -240,7 +247,7 @@ class HierarchicalPPO(RLAlgoBase):
                 A1 = subdata.get("A1", None) # Store before modifying
                 # Allow for importance sampling of the samples weigthed on the primary critic td error
                 if "_weight" in subdata:
-                    primary_critic_loss = (subdata["_weight"] * critic_loss).mean() 
+                    primary_critic_loss = (subdata["_weight"] * primary_critic_loss).mean() 
                     secondary_critic_loss = (subdata["_weight"] * secondary_critic_loss).mean()
                     # I think this is a valid way of weighting the actor loss
                     subdata["A1"] = subdata["A1"]* subdata["_weight"]
@@ -260,15 +267,15 @@ class HierarchicalPPO(RLAlgoBase):
                 # Primary objective loss gradient
                 primary_loss_vals["loss_objective"].backward()
                 grad_vec_primary_objective_loss = torch.cat(
-                    [p.grad.view(-1) for p in primary_loss_module.actor_net.parameters()]
+                    [p.grad.view(-1) for p in primary_loss_module.actor_network.parameters()]
                 ) 
-                primary_loss_module.actor_net.zero_grad()
+                primary_loss_module.actor_network.zero_grad()
                 # Secondary objective loss gradient
                 secondary_loss_vals["loss_objective"].backward()
                 grad_vec_secondary_objective_loss = torch.cat(
-                    [p.grad.view(-1) for p in secondary_loss_module.actor_net.parameters()]
+                    [p.grad.view(-1) for p in secondary_loss_module.actor_network.parameters()]
                 )
-                secondary_loss_module.actor_net.zero_grad()
+                secondary_loss_module.actor_network.zero_grad()
                 # Projection of secondary objective loss gradient onto nullspace of
                 # primary objective loss gradient
                 secondary_proj =(
@@ -281,9 +288,12 @@ class HierarchicalPPO(RLAlgoBase):
                     grad_vec_secondary_objective_loss - secondary_proj + grad_vec_primary_objective_loss
                 )
                 # Set gradient to the policy module
-                for p, g in zip(primary_loss_module.actor_net.parameters(), policy_grad):
-                    p.grad = g.view_as(p)
-
+                last_param_idx = 0
+                for p in primary_loss_module.actor_network.parameters():
+                    new_grad = policy_grad[last_param_idx:last_param_idx + p.data.numel()]
+                    new_grad = new_grad.view_as(p.data)
+                    p.grad = new_grad
+                    last_param_idx += p.data.numel()
                 # Critic losses
                 primary_loss_vals["loss_critic"] = primary_critic_loss * self.critic_coef
                 secondary_loss_vals["loss_critic"] = secondary_critic_loss * self.critic_coef 
