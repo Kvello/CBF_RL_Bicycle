@@ -40,14 +40,14 @@ class HierarchicalPPO(PPO):
         warn_str = "lmbda not found in config, using default value of 0.95"
         self.lmbda = get_config_value(config, "lmbda", 0.95, warn_str)
 
-        warn_str = "primary_critic_coef not found in config, using default value of 1.0"
-        self.primary_critic_coef = get_config_value(config, "primary_critic_coef", 1.0, warn_str)
+        warn_str = "CBF_critic_coef not found in config, using default value of 1.0"
+        self.CBF_critic_coef = get_config_value(config, "CBF_critic_coef", 1.0, warn_str)
 
         warn_str = "secondary_critic_coef not found in config, using default value of 1.0"
         self.secondary_critic_coef = get_config_value(config, "secondary_critic_coef", 1.0, warn_str)
 
-        warn_str = "primary_objective_coef not found in config, using default value of 1.0"
-        self.primary_objective_coef = get_config_value(config, "primary_objective_coef", 1.0, warn_str)
+        warn_str = "safety_objective_coef not found in config, using default value of 1.0"
+        self.safety_objective_coef = get_config_value(config, "safety_objective_coef", 1.0, warn_str)
         
         warn_str = "secondary_objective_coef not found in config, using default value of 1.0"
         self.secondary_objective_coef = get_config_value(config, "secondary_objective_coef", 1.0, warn_str)
@@ -121,16 +121,16 @@ class HierarchicalPPO(PPO):
                     monitor_gym=True,
                     save_code=True,
                     name=self.config.get("experiment_name", None),
-                    config = self.config)
+                    config = {**self.config,"method":"hippo"})
             
         self.loss_module = HiPPOLoss(
             actor=policy_module,
             primary_critic=V_primary,
             secondary_critic=V_secondary,
             clip_epsilon=self.clip_epsilon,
-            primary_critic_coef=self.primary_critic_coef,
+            primary_critic_coef=self.CBF_critic_coef,
             secondary_critic_coef=self.secondary_critic_coef,
-            primary_objective_coef=self.primary_objective_coef,
+            primary_objective_coef=self.safety_objective_coef,
             secondary_objective_coef=self.secondary_objective_coef,
             gamma=self.gamma,
         )

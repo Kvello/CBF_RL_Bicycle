@@ -30,7 +30,6 @@ from datetime import datetime
 import argparse
 from results.evaluate import PolicyEvaluator, calculate_bellman_violation
 from utils.utils import reset_batched_env   
-import wandb
 from models.factory import SafetyValueFunctionFactory
 from algorithms.hippo import HierarchicalPPO as HiPPO
 from algorithms.ppo import PPO
@@ -82,7 +81,7 @@ if __name__ == "__main__":
     frames_per_batch = int(2**12)
     lr = 5e-5
     max_grad_norm = 1.0
-    total_frames = int(2**20)
+    total_frames = int(2**22)
     num_epochs = 10  # optimization steps per batch of data collected
     clip_epsilon = (
         0.2  # clip value for PPO loss: see the equation in the intro for more context.
@@ -153,10 +152,14 @@ if __name__ == "__main__":
     args["state_space"] = state_space
     # P(i) = p_i^alpha / sum(p_i^alpha)
     # w(i) = 1/(N*P(i))^beta
-    args["alpha"] = 0.0
+    args["alpha"] = 0.8
     args["beta"] = 1.0
     args["primary_reward_key"] = "r1"
     args["secondary_reward_key"] = "r2"
+    args["CBF_critic_coef"] = 1.0
+    args["secondary_critic_coef"] = 0.1
+    args["safety_objective_coef"] = 1.0
+    args["secondary_objective_coef"] = 0.1
 
     #######################
     # Environment:
