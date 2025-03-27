@@ -19,6 +19,7 @@ import wandb
 from utils.utils import get_config_value
 from .ppo import PPO
 import warnings
+from utils.utils import gradient_projection
 
 
 class HierarchicalPPO(PPO):
@@ -219,33 +220,3 @@ class HierarchicalPPO(PPO):
         # torch.nn.utils.clip_grad_norm_(loss_module.parameters(), 
         #                                self.max_grad_norm)
         return loss_vals
-
-def gradient_projection(
-    common_module:torch.nn.Module,
-    primary_loss:torch.Tensor,
-    secondary_loss:torch.Tensor):
-    
-        # Primary objective loss gradient
-        primary_loss.backward()
-        grad_vec_primary_loss = torch.cat(
-            [p.grad.view(-1) for p in common_module.parameters()]
-        ) 
-        common_module.zero_grad()
-        # Secondary objective loss gradient
-        secondary_loss.backward()
-        grad_vec_secondary_loss = torch.cat(
-            [p.grad.view(-1) for p in common_module.parameters()]
-        )
-        common_module.zero_grad()
-        # Projection of secondary objective loss gradient onto nullspace of
-        # primary objective loss gradient
-        secondary_proj =(
-            torch.dot(grad_vec_secondary_loss, grad_vec_primary_loss)
-            / torch.dot(grad_vec_primary_loss, grad_vec_primary_loss)
-            * grad_vec_primary_loss
-        )
-
-        grad = (
-            grad_vec_secondary_loss - secondary_proj + grad_vec_primary_loss
-        )
-        return grad
