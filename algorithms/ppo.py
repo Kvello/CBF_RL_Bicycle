@@ -186,8 +186,8 @@ class PPO(RLAlgoBase):
         
         Args:
             tensordict_data (TensorDict): The data tensor dictionary.
-            loss_module (HiPPOLoss): The loss module.
-            advantage_module (ValueEstimatorBase): The advantage module.
+            loss_module (LossModule): The loss module.
+            advantage_module (TensorDictModuleBase): The advantage module.
             optim (torch.optim.Optimizer): The optimizer.
             replay_buffer (TensorDictReplayBuffer): The replay buffer.
             eval_func (Optional[Callable[None, Dict[str, float]]): An optional evaluation function.
@@ -207,7 +207,7 @@ class PPO(RLAlgoBase):
             for _ in range(self.frames_per_batch // self.sub_batch_size):
                 subdata = replay_buffer.sample(self.sub_batch_size).to(self.device)
                 loss_vals = self._set_gradients(loss_module, subdata)
-                
+                replay_buffer.update_tensordict_priority(subdata) 
                 optim.step()
                 optim.zero_grad()
 
