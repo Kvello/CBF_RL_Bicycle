@@ -105,7 +105,7 @@ class PPO(RLAlgoBase):
                     monitor_gym=True,
                     save_code=True,
                     name=self.config.get("experiment_name", None),
-                    config = self.config)
+                    config = {**self.config,"method": "ppo"})
             
         self.advantage_module = GAE(
             gamma=self.gamma,
