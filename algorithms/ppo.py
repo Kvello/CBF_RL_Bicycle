@@ -10,9 +10,9 @@ from torchrl.envs import (
     EnvBase,
     Transform,
 )
-from torchrl.objectives.value import GAE
+from torchrl.objectives.value import GAE, ValueEstimatorBase
 from torchrl.envs.utils import ExplorationType
-from torchrl.objectives import ClipPPOLoss
+from torchrl.objectives import ClipPPOLoss, LossModule
 from tqdm import tqdm
 import wandb
 from utils.utils import get_config_value
@@ -175,20 +175,19 @@ class PPO(RLAlgoBase):
 
     def step(self, 
              tensordict_data: TensorDict,
-             loss_module: ClipPPOLoss,
-             advantage_module: GAE,
+             loss_module: LossModule,
+             advantage_module: ValueEstimatorBase,
              optim: torch.optim.Optimizer,
              replay_buffer: TensorDictReplayBuffer,
              eval_func: Optional[Callable[None, Dict[str, float]]] = None):
 
         """
-        Perform a single step of the Hierarchical PPO algorithm.
+        Perform a single step of the (general) PPO algorithm.
         
         Args:
             tensordict_data (TensorDict): The data tensor dictionary.
             loss_module (HiPPOLoss): The loss module.
-            A_primary (GAE): The primary advantage module.
-            A_secondary (GAE): The secondary advantage module.
+            advantage_module (ValueEstimatorBase): The advantage module.
             optim (torch.optim.Optimizer): The optimizer.
             replay_buffer (TensorDictReplayBuffer): The replay buffer.
             eval_func (Optional[Callable[None, Dict[str, float]]): An optional evaluation function.

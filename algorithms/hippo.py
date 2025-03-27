@@ -10,7 +10,8 @@ from torchrl.envs import (
     EnvBase,
     Transform,
 )
-from torchrl.objectives.value import GAE
+from .advantages.multi_GAE import MultiGAE
+from torchrl.objectives.value import ValueEstimatorBase
 from torchrl.envs.utils import ExplorationType
 from .losses.hippo_loss import HiPPOLoss
 from tqdm import tqdm
@@ -134,33 +135,19 @@ class HierarchicalPPO(PPO):
             secondary_objective_coef=self.secondary_objective_coef,
             gamma=self.gamma,
         )
-        self.A_primary = GAE(
+        self.advantage_module = MultiGAE(
             gamma=self.gamma,
-            lmbda=self.lmbda,
-            value_network=V_primary,
-            average_gae=True,
+            lmdba=self.lmbda,
+            V_primary=V_primary,
+            V_secondary=V_secondary,
             device=self.device,
+            primary_reward_key=self.primary_reward_key,
+            secondary_reward_key=self.secondary_reward_key,
+            primary_advantage_key="A1",
+            secondary_advantage_key="A2",
+            primary_value_target_key="V1_target",
+            secondary_value_target_key="V2_target",
         )
-        self.A_primary.set_keys(
-            reward=self.primary_reward_key,
-            advantage="A1",
-            value_target="V1_target",
-            value=V_primary.out_keys[0]
-        )
-        self.A_secondary = GAE(
-            gamma=self.gamma,
-            lmbda=self.lmbda,
-            value_network=V_secondary,
-            average_gae=True,
-            device=self.device,
-        )
-        self.A_secondary.set_keys(
-            reward=self.secondary_reward_key,
-            advantage="A2",
-            value_target="V2_target",
-            value=V_secondary.out_keys[0]
-        )
-
         self.optim = optim(
             list(policy_module.parameters()) + 
             list(V_primary.parameters()) +
@@ -175,8 +162,7 @@ class HierarchicalPPO(PPO):
         for i, tensordict_data in enumerate(collector):
             logs.update(self.step(tensordict_data,
                                    self.loss_module,
-                                   self.A_primary,
-                                   self.A_secondary,
+                                   self.advantage_module,
                                    self.optim,
                                    replay_buffer,
                                    eval_func=eval_func))
@@ -202,60 +188,6 @@ class HierarchicalPPO(PPO):
         if wandb.run is not None:
             wandb.finish() 
         collector.shutdown()
-
-    def step(self, 
-             tensordict_data: TensorDict,
-             loss_module: HiPPOLoss,
-             A_primary: GAE,
-             A_secondary: GAE,
-             optim: torch.optim.Optimizer,
-             replay_buffer: TensorDictReplayBuffer,
-             eval_func: Optional[Callable[None, Dict[str, float]]] = None):
-
-        """
-        Perform a single step of the Hierarchical PPO algorithm.
-        
-        Args:
-            tensordict_data (TensorDict): The data tensor dictionary.
-            loss_module (HiPPOLoss): The loss module.
-            A_primary (GAE): The primary advantage module.
-            A_secondary (GAE): The secondary advantage module.
-            optim (torch.optim.Optimizer): The optimizer.
-            replay_buffer (TensorDictReplayBuffer): The replay buffer.
-            eval_func (Optional[Callable[None, Dict[str, float]]): An optional evaluation function.
-            
-        Returns:
-            Dict[str, float]: The logs.
-        """
-        if self.config is None:
-            raise ValueError("Setup must be called with a config before training")
-        logs = defaultdict(list)
-        for key in self.loss_value_log_keys:
-            logs[key] = 0.0
-        for _ in range(self.num_epochs):
-            A_primary(tensordict_data.to(self.device))
-            A_secondary(tensordict_data.to(self.device))
-            data_view = tensordict_data.reshape(-1)
-            replay_buffer.extend(data_view)
-            for _ in range(self.frames_per_batch // self.sub_batch_size):
-                subdata = replay_buffer.sample(self.sub_batch_size).to(self.device)
-                loss_vals = self._set_gradients(loss_module, subdata)
-                replay_buffer.update_tensordict_priority(subdata) 
-                
-                optim.step()
-                optim.zero_grad()
-
-                for key in self.loss_value_log_keys:
-                    logs[key] += loss_vals[key].item()
-        for key in self.loss_value_log_keys:
-            logs[key] /= self.num_epochs
-        for key in self.reward_keys:
-            logs[key] = tensordict_data["next",key].to(torch.float32).mean().item()
-        logs["step_count(average)"] = tensordict_data["step_count"].to(torch.float32).mean().item()
-        logs["lr"] = optim.param_groups[0]["lr"]
-        if eval_func is not None:
-            logs.update(eval_func(tensordict_data))
-        return logs
 
     def _set_gradients(self,
                       loss_module:TensorDictModule,
