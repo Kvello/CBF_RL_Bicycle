@@ -157,9 +157,9 @@ if __name__ == "__main__":
     args["primary_reward_key"] = "r1"
     args["secondary_reward_key"] = "r2"
     args["CBF_critic_coef"] = 1.0
-    args["secondary_critic_coef"] = 0.1
+    args["secondary_critic_coef"] = 1.0
     args["safety_objective_coef"] = 1.0
-    args["secondary_objective_coef"] = 0.1
+    args["secondary_objective_coef"] = 1.0
 
     #######################
     # Environment:
@@ -252,7 +252,7 @@ if __name__ == "__main__":
     #######################
     # Training:
     #######################
-    ppo_entity = HiPPO()
+    ppo_entity = PPO()
     ppo_entity.setup(args)
     evaluator = PolicyEvaluator(env=env,
                                 policy_module=policy_module,
@@ -310,8 +310,7 @@ if __name__ == "__main__":
         # )
         ppo_entity.train(
             policy_module=policy_module,
-            V_primary = CBF_module,
-            V_secondary = value_module,
+            value_module = CBF_module,
             optim=optim,
             collector=collector,
             replay_buffer=replay_buffer,
