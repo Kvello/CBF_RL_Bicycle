@@ -1,7 +1,7 @@
 from collections import defaultdict
 import torch
 from typing import List, Dict, Any, Optional, Callable
-from tensordict.nn import TensorDictModule
+from tensordict.nn import TensorDictModule, TensorDictModuleBase
 from tensordict import TensorDict
 from torchrl.collectors import DataCollectorBase
 from torchrl.data.replay_buffers import TensorDictReplayBuffer
@@ -10,7 +10,7 @@ from torchrl.envs import (
     EnvBase,
     Transform,
 )
-from torchrl.objectives.value import GAE, ValueEstimatorBase
+from torchrl.objectives.value import GAE
 from torchrl.envs.utils import ExplorationType
 from torchrl.objectives import ClipPPOLoss, LossModule
 from tqdm import tqdm
@@ -176,7 +176,7 @@ class PPO(RLAlgoBase):
     def step(self, 
              tensordict_data: TensorDict,
              loss_module: LossModule,
-             advantage_module: ValueEstimatorBase,
+             advantage_module: TensorDictModuleBase,
              optim: torch.optim.Optimizer,
              replay_buffer: TensorDictReplayBuffer,
              eval_func: Optional[Callable[None, Dict[str, float]]] = None):
