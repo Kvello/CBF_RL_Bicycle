@@ -143,10 +143,6 @@ class HierarchicalPPO(PPO):
             device=self.device,
             primary_reward_key=self.primary_reward_key,
             secondary_reward_key=self.secondary_reward_key,
-            primary_advantage_key="A1",
-            secondary_advantage_key="A2",
-            primary_value_target_key="V1_target",
-            secondary_value_target_key="V2_target",
         )
         self.optim = optim(
             list(policy_module.parameters()) + 
