@@ -32,6 +32,7 @@ class FfSafetyValueFunction(SafetyValueFunctionBase):
         self.layers = nn.Sequential() 
         self.bounded = bounded
         self.eps = eps
+        self.device = device
         dims = [input_size] +layers 
         for i in range(len(dims)-1):
             self.layers.add_module(f"layer_{i}",nn.Linear(dims[i],dims[i+1],device=device))
@@ -62,6 +63,7 @@ class QuadraticSafetyValueFunction(SafetyValueFunctionBase):
         self.input_size = input_size
         self.layer_sizes = layers
         self.layers = nn.Sequential()
+        self.device = device
         dims = [input_size] + layers
         for i in range(len(dims)-1):
             self.layers.add_module(f"layer_{i}",nn.Linear(dims[i],dims[i+1],device=device))

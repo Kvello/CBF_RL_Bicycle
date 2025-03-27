@@ -1,7 +1,7 @@
 from collections import defaultdict
 import torch
 from typing import List, Dict, Any, Optional, Callable
-from tensordict.nn import TensorDictModule, TensorDictModuleBase
+from tensordict.nn import TensorDictModule
 from tensordict import TensorDict
 from torchrl.collectors import DataCollectorBase
 from torchrl.data.replay_buffers import TensorDictReplayBuffer
@@ -10,17 +10,19 @@ from torchrl.envs import (
     EnvBase,
     Transform,
 )
-from torchrl.objectives.value import GAE
+from .advantages.multi_GAE import MultiGAE
+from torchrl.objectives.value import ValueEstimatorBase
 from torchrl.envs.utils import ExplorationType
-from torchrl.objectives import ClipPPOLoss, LossModule
+from .losses.hippo_loss import HiPPOLoss
 from tqdm import tqdm
 import wandb
 from utils.utils import get_config_value
-from .RlAlgoBase import RLAlgoBase
+from .ppo import PPO
 import warnings
+from utils.utils import gradient_projection
 
 
-class PPO(RLAlgoBase):
+class HierarchicalPPO(PPO):
     def __init__(self):
         super().__init__()
     def setup(self, config: Dict[str, Any]):
@@ -40,39 +42,53 @@ class PPO(RLAlgoBase):
         warn_str = "lmbda not found in config, using default value of 0.95"
         self.lmbda = get_config_value(config, "lmbda", 0.95, warn_str)
 
-        warn_str = "critic_coef not found in config, using default value of 1.0"
-        self.critic_coef = get_config_value(config, "critic_coef", 1.0, warn_str)
+        warn_str = "CBF_critic_coef not found in config, using default value of 1.0"
+        self.CBF_critic_coef = get_config_value(config, "CBF_critic_coef", 1.0, warn_str)
 
-        warn_str = "loss_critic_type not found in config, using default value of 'smooth_l1'"
-        self.loss_critictype = get_config_value(config, "loss_critic_type", "smooth_l1", warn_str)
+        warn_str = "secondary_critic_coef not found in config, using default value of 1.0"
+        self.secondary_critic_coef = get_config_value(config, "secondary_critic_coef", 1.0, warn_str)
 
+        warn_str = "safety_objective_coef not found in config, using default value of 1.0"
+        self.safety_objective_coef = get_config_value(config, "safety_objective_coef", 1.0, warn_str)
+        
+        warn_str = "secondary_objective_coef not found in config, using default value of 1.0"
+        self.secondary_objective_coef = get_config_value(config, "secondary_objective_coef", 1.0, warn_str)
+        
         warn_str = "gamma not found in config, using default value of 0.99"
         self.gamma = get_config_value(config, "gamma", 0.99, warn_str)
 
         warn_str = "num_epochs not found in config, using default value of 10"
         self.num_epochs = get_config_value(config, "num_epochs", 10, warn_str) 
-
+        
         warn_str = "primary_reward_key not found in config, using default value of 'r1'"
         self.primary_reward_key = get_config_value(config, "primary_reward_key", "r1", warn_str)
         
         warn_str = "secondary_reward_key not found in config, using default value of 'r2'"
         self.secondary_reward_key = get_config_value(config, "secondary_reward_key", "r2", warn_str)
 
-        self.loss_value_log_keys = ["loss_safety_objective", "loss_CBF"]
+        self.loss_value_log_keys = {
+            "loss_safety_objective",
+            "loss_secondary_objective",
+            "loss_CBF",
+            "loss_secondary_critic",
+        }
         self.reward_keys = {self.primary_reward_key, self.secondary_reward_key}
+
     def train(self,
               policy_module: TensorDictModule,
-              value_module: TensorDictModule,
+              V_primary: TensorDictModule,
+              V_secondary: TensorDictModule,
               optim: torch.optim.Optimizer,
               collector: DataCollectorBase,
               replay_buffer: TensorDictReplayBuffer,
-              eval_func: Optional[Callable[None, Dict[str, float]]] = None
+              eval_func: Optional[Callable[None, Dict[str, float]]] = None,
               ):
         """Train the PPO algorithm.
 
         Args:
             policy_module (TensorDictModule): The policy module.
-            value_module (TensorDictModule): The value module.
+            V_primary (TensorDictModule): The primary value network.
+            V_secondary (TensorDictModule): The secondary value network.
             optim (torch.optim.Optimizer): The optimizer.
             collector (DataCollectorBase): The data collector.
             replay_buffer (TensorDictReplayBuffer): The replay buffer.
@@ -98,46 +114,43 @@ class PPO(RLAlgoBase):
         else:
             raise ValueError("Collector must have total_frames attribute.\
                                 Try using a different collector.")
-
+        if V_primary.out_keys[0] == V_secondary.out_keys[0]:
+            warnings.warn("Value networks have the same output keys. This may cause issues.")
+            
         if self.config.get("track", False):
             wandb.init(project=self.config.get("wandb_project", "ppo"),
                     sync_tensorboard=True,
                     monitor_gym=True,
                     save_code=True,
                     name=self.config.get("experiment_name", None),
-                    config = {**self.config,"method": "ppo"})
+                    config = {**self.config,"method":"hippo"})
             
-        self.advantage_module = GAE(
-            gamma=self.gamma,
-            lmbda=self.lmbda,
-            value_network=value_module,
-            average_gae=True,
-            device=self.device,
-        )
-        self.advantage_module.set_keys(
-            value = value_module.out_keys[0],
-            reward = self.primary_reward_key,
-            advantage = "advantage",
-            value_target = "value_target",
-        )
-
-        self.loss_module = ClipPPOLoss(
-            actor_network=policy_module,
-            critic_network=value_module,
+        self.loss_module = HiPPOLoss(
+            actor=policy_module,
+            primary_critic=V_primary,
+            secondary_critic=V_secondary,
             clip_epsilon=self.clip_epsilon,
-            entropy_bonus=False,
-            entropy_coef=0.0,
-            critic_coef=self.critic_coef,
-            loss_critic_type=self.loss_critictype,
+            CBF_critic_coef=self.CBF_critic_coef,
+            secondary_critic_coef=self.secondary_critic_coef,
+            safety_objective_coef=self.safety_objective_coef,
+            secondary_objective_coef=self.secondary_objective_coef,
+            gamma=self.gamma,
         )
-        self.loss_module.set_keys(
-            advantage="advantage",
-            value=value_module.out_keys[0],
-            value_target="value_target",
-            reward=self.primary_reward_key,
+        self.advantage_module = MultiGAE(
+            gamma=self.gamma,
+            lmdba=self.lmbda,
+            V_primary=V_primary,
+            V_secondary=V_secondary,
+            device=self.device,
+            primary_reward_key=self.primary_reward_key,
+            secondary_reward_key=self.secondary_reward_key,
         )
-        self.optim = optim(self.loss_module.parameters(), **self.config.get("optim_kwargs", {}))
-
+        self.optim = optim(
+            list(policy_module.parameters()) + 
+            list(V_primary.parameters()) +
+            list(V_secondary.parameters()),
+            **self.config.get("optim_kwargs", {})
+        )
         print("Training with config:")
         print(self.config)
         logs = defaultdict(list)
@@ -173,94 +186,37 @@ class PPO(RLAlgoBase):
             wandb.finish() 
         collector.shutdown()
 
-    def step(self, 
-             tensordict_data: TensorDict,
-             loss_module: LossModule,
-             advantage_module: TensorDictModuleBase,
-             optim: torch.optim.Optimizer,
-             replay_buffer: TensorDictReplayBuffer,
-             eval_func: Optional[Callable[None, Dict[str, float]]] = None):
-
-        """
-        Perform a single step of the (general) PPO algorithm.
-        
-        Args:
-            tensordict_data (TensorDict): The data tensor dictionary.
-            loss_module (LossModule): The loss module.
-            advantage_module (TensorDictModuleBase): The advantage module.
-            optim (torch.optim.Optimizer): The optimizer.
-            replay_buffer (TensorDictReplayBuffer): The replay buffer.
-            eval_func (Optional[Callable[None, Dict[str, float]]): An optional evaluation function.
-            
-        Returns:
-            Dict[str, float]: The logs.
-        """
-        if self.config is None:
-            raise ValueError("Setup must be called with a config before training")
-        logs = defaultdict(list)
-        for key in self.loss_value_log_keys:
-            logs[key] = 0.0
-        for _ in range(self.num_epochs):
-            advantage_module(tensordict_data.to(self.device))
-            data_view = tensordict_data.reshape(-1)
-            replay_buffer.extend(data_view)
-            for _ in range(self.frames_per_batch // self.sub_batch_size):
-                subdata = replay_buffer.sample(self.sub_batch_size).to(self.device)
-                loss_vals = self._set_gradients(loss_module, subdata)
-                replay_buffer.update_tensordict_priority(subdata) 
-                optim.step()
-                optim.zero_grad()
-
-                for key in self.loss_value_log_keys:
-                    logs[key] += loss_vals[key].item()
-        for key in self.loss_value_log_keys:
-            logs[key] /= self.num_epochs
-        for key in self.reward_keys:
-            logs[key] = tensordict_data["next",key].to(torch.float32).mean().item()
-        logs["step_count(average)"] = tensordict_data["step_count"].to(torch.float32).mean().item()
-        logs["lr"] = optim.param_groups[0]["lr"]
-        if eval_func is not None:
-            logs.update(eval_func(tensordict_data))
-        return logs
-
     def _set_gradients(self,
-        loss_module: ClipPPOLoss,
-        tensordict: TensorDict):
+                      loss_module:TensorDictModule,
+                      tensordict: TensorDict):
         """
-        Set the gradients for the loss module and return the loss values.
+        Set the gradients for the networks and return the loss values.
         
         Args:
-            loss_module (ClipPPOLoss): The loss module.
+            loss_module (TensorDictModule): The loss module.
             tensordict (TensorDict): The data tensor dictionary.
             
         Returns:
-            Dict[str, float]: The loss values.
+            TensorDict: The loss values.
         """
-        value_key = loss_module.critic_network.out_keys[0]
-        state_value = loss_module.critic_network(tensordict)[value_key]
-        with torch.no_grad():
-            tensordict["td_error"] = torch.abs(tensordict["value_target"] - state_value)
-        critic_loss = torch.nn.HuberLoss(reduction='none')(state_value, tensordict["value_target"])
-        # Allow for importance sampling of the samples
-        if "_weight" in tensordict:
-            critic_loss = (tensordict["_weight"] * critic_loss).mean() 
-            # I think this is a valid way of weighting the actor loss
-            # The tensordict sampled from the replay buffer is a copy of the original,
-            # so we can safely modify it without affecting the data in the replay buffer
-            tensordict["advantage"] = tensordict["advantage"]* tensordict["_weight"]
-        else:
-            critic_loss = critic_loss.mean()
+         
         loss_vals = loss_module(tensordict)
-        loss_vals["loss_critic"] = critic_loss * self.critic_coef
-        # rename loss value keys
-        loss_vals["loss_CBF"] = loss_vals["loss_critic"]
-        loss_vals["loss_safety_objective"] = loss_vals["loss_objective"]
-        del loss_vals["loss_critic"]
-        del loss_vals["loss_objective"]
-        loss_value = (
-            loss_vals["loss_safety_objective"]
-            + loss_vals["loss_CBF"]
+        critic_loss = (
+            loss_vals["loss_CBF"] + loss_vals["loss_secondary_critic"]
         )
-        
-        loss_value.backward()
+        critic_loss.backward()
+        policy_grad = gradient_projection(loss_module.actor_network, 
+                            loss_vals["loss_safety_objective"], 
+                            loss_vals["loss_secondary_objective"])
+                # Set gradient to the policy module
+        last_param_idx = 0
+        for p in loss_module.actor_network.parameters():
+            new_grad = policy_grad[last_param_idx:last_param_idx + p.data.numel()]
+            new_grad = new_grad.view_as(p.data)
+            p.grad = new_grad
+            last_param_idx += p.data.numel()
+        # this is not strictly mandatory but it's good practice to keep
+        # your gradient norm bounded
+        # torch.nn.utils.clip_grad_norm_(loss_module.parameters(), 
+        #                                self.max_grad_norm)
         return loss_vals
