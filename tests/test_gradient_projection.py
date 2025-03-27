@@ -107,6 +107,8 @@ def test_edge_cases(model_and_data, target1, target2):
     model.zero_grad()
 
     assert projected_grad is not None, "Projected gradient should not be None"
+    assert torch.isnan(projected_grad).sum() == 0, "Projected gradient should not contain NaNs"
+    assert torch.isinf(projected_grad).sum() == 0, "Projected gradient should not contain infinities"
     assert projected_grad.shape == torch.Size([2]), "Incorrect gradient shape"
     assert torch.allclose(projected_grad, primary_grad, atol=1e-6), \
         "The projected gradient should be equal to the primary gradient"

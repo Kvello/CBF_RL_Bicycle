@@ -66,11 +66,14 @@ def gradient_projection(
         common_module.zero_grad()
         # Projection of secondary objective loss gradient onto nullspace of
         # primary objective loss gradient
-        secondary_proj =(
-            torch.dot(grad_vec_secondary_loss, grad_vec_primary_loss)
-            / torch.dot(grad_vec_primary_loss, grad_vec_primary_loss)
-            * grad_vec_primary_loss
-        )
+        if grad_vec_primary_loss.norm() == 0:
+            secondary_proj = torch.zeros_like(grad_vec_secondary_loss)
+        else:
+            secondary_proj =(
+                torch.dot(grad_vec_secondary_loss, grad_vec_primary_loss)
+                / torch.dot(grad_vec_primary_loss, grad_vec_primary_loss)
+                * grad_vec_primary_loss
+            )
 
         grad = (
             grad_vec_secondary_loss - secondary_proj + grad_vec_primary_loss
