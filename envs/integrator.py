@@ -393,9 +393,9 @@ class MultiObjectiveDoubleIntegratorEnv(SafeDoubleIntegratorEnv):
         return x1*x2
     @classmethod
     def _step(cls, tensordict: TensorDict)->TensorDict:
+        r2 = torch.as_tensor(cls._secondary_reward_func(tensordict["x1"],tensordict["x2"]))
         out = super()._step(tensordict)
         r1 = out["reward"].clone()
-        r2 = torch.as_tensor(cls._secondary_reward_func(out["x1"],out["x2"]))
         r2 = r2.view_as(r1).to(torch.float32)
         new_vals = TensorDict({
             cls.primary_reward_key: r1,
