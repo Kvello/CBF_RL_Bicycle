@@ -4,6 +4,7 @@ from tensordict.nn import ProbabilisticTensorDictSequential, TensorDictModule
 from tensordict import TensorDict, TensorDictBase
 import torch
 
+#TODO: Allow for modifiable tensordict keys in loss functions
 class HiPPOLoss(LossModule):
     def __init__(
         self,
