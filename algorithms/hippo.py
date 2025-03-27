@@ -128,9 +128,9 @@ class HierarchicalPPO(PPO):
             primary_critic=V_primary,
             secondary_critic=V_secondary,
             clip_epsilon=self.clip_epsilon,
-            primary_critic_coef=self.CBF_critic_coef,
+            CBF_critic_coef=self.CBF_critic_coef,
             secondary_critic_coef=self.secondary_critic_coef,
-            primary_objective_coef=self.safety_objective_coef,
+            safety_objective_coef=self.safety_objective_coef,
             secondary_objective_coef=self.secondary_objective_coef,
             gamma=self.gamma,
         )
