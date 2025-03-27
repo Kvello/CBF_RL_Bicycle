@@ -17,9 +17,9 @@ class HiPPOLoss(LossModule):
         entropy_bonus: bool = True,
         samples_mc_entropy: int = 1,
         entropy_coef: float = 0.01,
-        primary_critic_coef: float = 1.0,
+        CBF_critic_coef: float = 1.0,
         secondary_critic_coef: float = 1.0,
-        primary_objective_coef: float = 1.0,
+        safety_objective_coef: float = 1.0,
         secondary_objective_coef: float = 1.0,
         normalize_advantage: bool = False,
         gamma: float = None,
@@ -36,9 +36,9 @@ class HiPPOLoss(LossModule):
         self.primary_reward_key = primary_reward_key
         self.secondary_reward_key = secondary_reward_key
 
-        self.primary_critic_coef = primary_critic_coef
+        self.CBF_critic_coef = CBF_critic_coef
         self.secondary_critic_coef = secondary_critic_coef
-        self.primary_objective_coef = primary_objective_coef
+        self.safety_objective_coef = safety_objective_coef
         self.secondary_objective_coef = secondary_objective_coef
 
         # We only use these to calculate the objective losses
@@ -48,7 +48,7 @@ class HiPPOLoss(LossModule):
             clip_epsilon=clip_epsilon,
             entropy_bonus=False,
             entropy_coef=0.0,
-            critic_coef=self.primary_critic_coef,
+            critic_coef=self.CBF_critic_coef,
             loss_critic_type="smooth_l1",
         )
         self.primary_loss.set_keys(
@@ -107,9 +107,9 @@ class HiPPOLoss(LossModule):
             secondary_critic_loss = secondary_critic_loss.mean()
         secondary_loss_vals = self.secondary_loss(tensordict)
         primary_loss_vals = self.primary_loss(tensordict)
-        primary_loss_vals["loss_critic"] = primary_critic_loss * self.primary_critic_coef
+        primary_loss_vals["loss_critic"] = primary_critic_loss * self.CBF_critic_coef
         secondary_loss_vals["loss_critic"] = secondary_critic_loss * self.secondary_critic_coef
-        primary_loss_vals["loss_objective"] = primary_loss_vals["loss_objective"] * self.primary_objective_coef
+        primary_loss_vals["loss_objective"] = primary_loss_vals["loss_objective"] * self.safety_objective_coef
         secondary_loss_vals["loss_objective"] = secondary_loss_vals["loss_objective"] * self.secondary_objective_coef
 
         td_out = TensorDict(
