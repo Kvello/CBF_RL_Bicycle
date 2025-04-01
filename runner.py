@@ -135,7 +135,7 @@ if __name__ == "__main__":
     #######################
     # Arguments:
     #######################
-    args["gamma"] = 0.97
+    args["gamma"] = 0.95
     args["num_epochs"] = num_epochs
     args["frames_per_batch"] = frames_per_batch
     args["sub_batch_size"] = sub_batch_size
@@ -152,14 +152,15 @@ if __name__ == "__main__":
     args["state_space"] = state_space
     # P(i) = p_i^alpha / sum(p_i^alpha)
     # w(i) = 1/(N*P(i))^beta
-    args["alpha"] = 0.8
+    args["alpha"] = 1.0
     args["beta"] = 1.0
     args["primary_reward_key"] = "r1"
     args["secondary_reward_key"] = "r2"
     args["CBF_critic_coef"] = 1.0
     args["secondary_critic_coef"] = 1.0
     args["safety_objective_coef"] = 1.0
-    args["secondary_objective_coef"] = 1.0
+    args["secondary_objective_coef"] = 0.375
+    args["batches_per_process"] = batches_per_process
 
     #######################
     # Environment:
@@ -252,7 +253,7 @@ if __name__ == "__main__":
     #######################
     # Training:
     #######################
-    ppo_entity = PPO()
+    ppo_entity = HiPPO()
     ppo_entity.setup(args)
     evaluator = PolicyEvaluator(env=env,
                                 policy_module=policy_module,
@@ -310,7 +311,8 @@ if __name__ == "__main__":
         # )
         ppo_entity.train(
             policy_module=policy_module,
-            value_module = CBF_module,
+            V_primary = CBF_module,
+            V_secondary = value_module,
             optim=optim,
             collector=collector,
             replay_buffer=replay_buffer,
