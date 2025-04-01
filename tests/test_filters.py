@@ -87,3 +87,9 @@ def test_reset():
     smf.apply(torch.tensor(10.0))
     smf.reset()
     assert smf.mean == 0.0 and smf.n == 1
+
+def test_edge_case():
+    lpf = LowPassFilter(0.5, torch.tensor(5.0))
+    with pytest.warns(UserWarning):
+        lpf.apply(torch.tensor(float('nan')))
+    assert lpf.y == 5.0

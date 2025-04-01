@@ -34,7 +34,6 @@ class FirstOrderFilter(Filter):
     def apply(self, data:torch.Tensor)->torch.Tensor: 
         mask = self._check_data(data)
         if mask.any():
-            warnings.warn("Data contains NaN or Inf values")
             data[mask] = self.y
         self.y = self._forward(data,self.y)
         return self._output(data,self.y)
