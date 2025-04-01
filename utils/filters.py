@@ -17,6 +17,7 @@ class Filter:
         if mask.any():
             warnings.warn("Data contains NaN or Inf values")
         return mask
+
 class FirstOrderFilter(Filter):
     """First order filter
     A base class for first order filters. This class is not meant to be used
@@ -67,6 +68,7 @@ class HighPassFilter(FirstOrderFilter):
         return y + self.alpha * (data - y)
     def _output(self, data:torch.Tensor,y:torch.Tensor)->torch.Tensor:
         return data - y
+
 class SampleMeanFilter(Filter):
     """Sample mean filter
     A simple filter that computes the sample mean of the data online
@@ -86,3 +88,59 @@ class SampleMeanFilter(Filter):
     def reset(self):
         self.mean = 0.0
         self.n:int = 1
+
+
+class RunningNormalizerBase:
+    """Base class for running normalizers."""
+    def __init__(self, offset: float = 0.0):
+        self.offset = offset
+
+    def __call__(self, x: torch.Tensor) -> torch.Tensor:
+        """Apply normalization to the input."""
+        raise NotImplementedError
+
+    def reset(self):
+        """Reset the internal state."""
+        raise NotImplementedError
+
+
+class RunningMeanNormalizer(RunningNormalizerBase):
+    """Normalizer using a running sample mean."""
+    def __init__(self, offset: float = 0.0):
+        super().__init__(offset)
+        self.n = 1
+        self.mean = torch.tensor(0.0)
+        self.filter = SampleMeanFilter()
+
+    def __call__(self, x: torch.Tensor) -> torch.Tensor:
+        self.mean = self.filter.apply(x)
+        return x - self.mean + self.offset 
+
+    def reset(self):
+        self.filter.reset()
+
+class RunningLowPassNormalizer(RunningNormalizerBase):
+    """Normalizer using a first-order low-pass filter."""
+    def __init__(self, alpha: float, offset: float = 0.0,initial_value:float=0.0):
+        super().__init__(offset)
+        self.filter = LowPassFilter(alpha,initial_value)
+        self.mean = torch.tensor(0.0)
+    def __call__(self, x: torch.Tensor) -> torch.Tensor:
+        self.mean = self.filter.apply(x)
+        return x - self.mean + self.offset
+
+    def reset(self):
+        self.filter.reset()
+
+
+class NormalizerFactory:
+    """Factory class for creating normalizers."""
+    @staticmethod
+    def create(normalizer_type: str, **kwargs) -> RunningNormalizerBase:
+        normalizers = {
+            "mean": RunningMeanNormalizer,
+            "lowpass": RunningLowPassNormalizer,
+        }
+        if normalizer_type not in normalizers:
+            raise ValueError(f"Unknown normalizer type: {normalizer_type}")
+        return normalizers[normalizer_type](**kwargs)
