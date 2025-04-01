@@ -1,4 +1,4 @@
-from utils.utils import gradient_projection
+from algorithms.hippo import gradient_projection
 from torch import nn
 import torch
 import pytest

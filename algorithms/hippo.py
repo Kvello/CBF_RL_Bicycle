@@ -19,8 +19,84 @@ import wandb
 from utils.utils import get_config_value
 from .ppo import PPO
 import warnings
-from utils.utils import gradient_projection
+from utils.filters import Filter, NormalizerFactory
 
+def gradient_projection(
+    common_module:torch.nn.Module,
+    primary_loss:torch.Tensor,
+    secondary_loss:torch.Tensor,
+    gradient_scaler:Callable[float,float]= lambda x: x,
+    debug:bool = False)->torch.Tensor:
+        r"""Calculates a projected gradient of the secondary loss onto the nullspace
+        of the primary loss. Returns the sum of the primary loss gradient and the
+        projected secondary loss gradient. I.e
+        .. math::
+            \begin{align}
+                \boldsymbol{\eta} &= \nabla_{\theta} L_2^{\text{CLIP}}(\theta) - \text{Proj}_{\nabla_{\theta} L_1^{\text{CLIP}}(\theta)}(\nabla_{\theta} L_2^{\text{CLIP}}(\theta))\\
+                \boldsymbol{\delta_\pi} &= \nabla_{\theta} L_1^{\text{CLIP}}(\theta) + w^{\text{CLIP}}\boldsymbol{\eta}
+                w^{\text{CLIP}} &= l_r \cdot \frac{||\nabla_{\theta} L_1^{\text{CLIP}}(\theta)||}{||\boldsymbol{\eta}||}
+            \end{align}
+        Where l_r is the output of the gradient_scaler function, and becomes the relative length
+        between the primary and projected secondary loss gradients. Theta are the parameters of the
+        common_module
+        
+        Args:
+            common_module (torch.nn.Module): Common module with which the two losses were computed 
+            containing the parameters
+            primary_loss (torch.Tensor): The primary loss tensor
+            secondary_loss (torch.Tensor): The secondary loss tensor
+            gradient_scaler (Callable[float,float], optional): A function that scales the secondary
+            loss gradient with respect to the primary loss gradient. This will typically be a filter,
+            or a constant. Defaults to lambda x: x. Helps with stability.
+        Returns:
+            torch.Tensor: The projected and combined gradient
+            
+        Note:
+            Calling this funciton clears the gradients of the common module,
+            and does not retain the computational graph after the projection.
+            This means that to recompute the gradients, the losses have to be recomputed
+            as well.
+        """
+        # Primary objective loss gradient
+        primary_loss.backward(retain_graph=True)
+        grad_vec_primary_loss = torch.cat(
+            [p.grad.view(-1) for p in common_module.parameters()]
+        ) 
+        common_module.zero_grad()
+        # Secondary objective loss gradient
+        secondary_loss.backward()
+        grad_vec_secondary_loss = torch.cat(
+            [p.grad.view(-1) for p in common_module.parameters()]
+        )
+        common_module.zero_grad()
+        if torch.isclose(grad_vec_primary_loss.norm(),torch.tensor(0.0),atol=1e-30):
+            # If primary loss gradient is zero, return secondary loss gradient
+            # This is an edge case, and should not happen in practice
+            return grad_vec_secondary_loss
+        # Projection of secondary objective loss gradient onto nullspace of
+        # primary objective loss gradient
+        secondary_proj =(
+            torch.dot(grad_vec_secondary_loss, grad_vec_primary_loss)
+            / torch.dot(grad_vec_primary_loss, grad_vec_primary_loss)
+            * grad_vec_primary_loss
+        )
+        secondary_proj = grad_vec_secondary_loss - secondary_proj 
+        relative_length = gradient_scaler(secondary_proj.norm() / grad_vec_primary_loss.norm())
+        # Make sure gradient_scaler is ran in the case of a zero secondary loss gradient,
+        # as this still is a valid case for the gradient scaler, and should be reported to the
+        # gradient scaler if it is statefull(e.g a filter).
+        if wandb.run is not None and debug:
+            wandb.log({"relative gradient length":relative_length})
+            wandb.log({"Estimated mean:": gradient_scaler.mean})
+        if torch.isclose(secondary_proj.norm(),torch.tensor(0.0),atol=1e-30):
+            # If secondary loss gradient is zero, ignore the projection
+            # and return the primary loss gradient
+            return grad_vec_primary_loss 
+        secondary_proj = secondary_proj/secondary_proj.norm()
+        grad = (
+            secondary_proj*relative_length + grad_vec_primary_loss
+        )
+        return grad
 
 class HierarchicalPPO(PPO):
     def __init__(self):
@@ -42,18 +118,9 @@ class HierarchicalPPO(PPO):
         warn_str = "lmbda not found in config, using default value of 0.95"
         self.lmbda = get_config_value(config, "lmbda", 0.95, warn_str)
 
-        warn_str = "CBF_critic_coef not found in config, using default value of 1.0"
-        self.CBF_critic_coef = get_config_value(config, "CBF_critic_coef", 1.0, warn_str)
+        warn_str = "critic_coef not found in config, using default value of 1.0"
+        self.critic_coef = get_config_value(config, "critic_coef", 1.0, warn_str)
 
-        warn_str = "secondary_critic_coef not found in config, using default value of 1.0"
-        self.secondary_critic_coef = get_config_value(config, "secondary_critic_coef", 1.0, warn_str)
-
-        warn_str = "safety_objective_coef not found in config, using default value of 1.0"
-        self.safety_objective_coef = get_config_value(config, "safety_objective_coef", 1.0, warn_str)
-        
-        warn_str = "secondary_objective_coef not found in config, using default value of 1.0"
-        self.secondary_objective_coef = get_config_value(config, "secondary_objective_coef", 1.0, warn_str)
-        
         warn_str = "gamma not found in config, using default value of 0.99"
         self.gamma = get_config_value(config, "gamma", 0.99, warn_str)
 
@@ -73,6 +140,16 @@ class HierarchicalPPO(PPO):
             "loss_secondary_critic",
         }
         self.reward_keys = {self.primary_reward_key, self.secondary_reward_key}
+
+        self.debug = config.get("debug", False)
+
+        warn_str = "gradient_scaler not found in config, using default value of None"
+        self.gradient_normalization = get_config_value(config, "gradient_normalization",None,warn_str)
+        if self.gradient_normalization is not None:
+            self.gradient_normalization = NormalizerFactory.create(self.gradient_normalization,
+                                                                   **config.get("gradient_normalization_kwargs", {}))
+        else:
+            self.gradient_normalization = lambda x: x
 
     def train(self,
               policy_module: TensorDictModule,
@@ -130,10 +207,7 @@ class HierarchicalPPO(PPO):
             primary_critic=V_primary,
             secondary_critic=V_secondary,
             clip_epsilon=self.clip_epsilon,
-            CBF_critic_coef=self.CBF_critic_coef,
-            secondary_critic_coef=self.secondary_critic_coef,
-            safety_objective_coef=self.safety_objective_coef,
-            secondary_objective_coef=self.secondary_objective_coef,
+            critic_coef=self.critic_coef,
             gamma=self.gamma,
         )
         self.advantage_module = MultiGAE(
@@ -207,7 +281,9 @@ class HierarchicalPPO(PPO):
         critic_loss.backward()
         policy_grad = gradient_projection(loss_module.actor_network, 
                             loss_vals["loss_safety_objective"], 
-                            loss_vals["loss_secondary_objective"])
+                            loss_vals["loss_secondary_objective"],
+                            self.gradient_normalization,
+                            debug=self.debug)
                 # Set gradient to the policy module
         last_param_idx = 0
         for p in loss_module.actor_network.parameters():
