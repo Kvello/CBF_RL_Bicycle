@@ -25,6 +25,7 @@ pkgs.mkShellNoCC {
       pip
       wandb
       ray
+      tblib
     ]))
   ];
   shellHook = ''
