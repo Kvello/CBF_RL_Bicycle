@@ -144,6 +144,7 @@ class PPO(RLAlgoBase):
         eval_logs = defaultdict(list)
         pbar = tqdm(total=total_frames)
         for i, tensordict_data in enumerate(collector):
+            collector.env.extend_initial_state_buffer(tensordict_data)
             logs.update(self.step(tensordict_data,
                                    self.loss_module,
                                    self.advantage_module,
