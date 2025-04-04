@@ -32,6 +32,9 @@ class PolicyEvaluator:
         self.rollout_len = rollout_len
     def evaluate_policy(self) -> Dict[str,Any]:
         logs = {}
+        if hasattr(self.env, "evaluate"):
+            env_eval = self.env.evaluate
+            self.env.evaluate = True
         with set_exploration_type(ExplorationType.DETERMINISTIC), torch.no_grad():
             # execute a rollout with the trained policy
             eval_rollout = self.env.rollout(
@@ -43,6 +46,9 @@ class PolicyEvaluator:
                 elif key in eval_rollout:
                     logs[f"eval {key}(average)"] = (eval_rollout[key].to(torch.float32).mean().item())
             del eval_rollout
+        if hasattr(self.env, "evaluate"):
+            # restore the original env
+            self.env.evaluate = env_eval
         return logs
 
     
