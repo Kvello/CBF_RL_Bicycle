@@ -54,7 +54,7 @@ def parse_args()->Dict[str,Any]:
     parser.add_argument("--plot_traj", type=int, default=0, help="Number of trajectories to plot")
     parser.add_argument("--save", action="store_true", default=False, help="Save the models")
     parser.add_argument("--plot_CBF", action="store_true", default=False, help="Plot the value function landscape")
-    parser.add_argument("--max_rollout_len", type=int, default=100, help="Maximum rollout length")
+    parser.add_argument("--max_rollout_len", type=int, default=32, help="Maximum rollout length")
     parser.add_argument("--track", action="store_true", default=False, help="Track the training with wandb")
     parser.add_argument("--wandb_project", type=str, default="ppo_safe_integrator", help="Wandb project name")
     parser.add_argument("--experiment_name", type=str, default=None, help="Wandb experiment name")
@@ -79,7 +79,7 @@ if __name__ == "__main__":
     frames_per_batch = int(2**12)
     lr = 5e-5
     max_grad_norm = 1.0
-    total_frames = int(2**22)
+    total_frames = int(2**21)
     num_epochs = 10  # optimization steps per batch of data collected
     clip_epsilon = (
         0.2  # clip value for PPO loss: see the equation in the intro for more context.
@@ -142,6 +142,7 @@ if __name__ == "__main__":
     # w(i) = 1/(N*P(i))^beta
     args["alpha"] = 0.0
     args["beta"] = 1.0
+    args["initial_state_buffer_fraction"] = 0.5
     args["primary_reward_key"] = "r1"
     args["secondary_reward_key"] = "r2"
     args["CBF_critic_coef"] = 1.0
@@ -153,9 +154,11 @@ if __name__ == "__main__":
     #######################
     # Environment:
     #######################
-    base_env = MultiObjectiveDoubleIntegratorEnv(batch_size=args.get("batches_per_process"),
-                                                 device=device,
-                                                 td_params=parameters)
+    base_env = MultiObjectiveDoubleIntegratorEnv(
+        batch_size=args.get("num_parallel_env"),
+        buffer_reset_fraction=args.get("initial_state_buffer_fraction"),
+        device=device,
+        td_params=parameters)
     transforms = [
             UnsqueezeTransform(in_keys=["x1", "x2"], dim=-1,in_keys_inv=["x1","x2"]),
             CatTensors(in_keys =["x1", "x2"], out_key= "obs",del_keys=False,dim=-1),
@@ -268,8 +271,6 @@ if __name__ == "__main__":
     else:
         eval_func = lambda x: evaluator.evaluate_policy()
     if args.get("train"):
-        env_creator = EnvCreator(lambda: env)
-        create_env_fn = [env_creator for _ in range(num_workers)]
         collector = SyncDataCollector(
             create_env_fn=env,
             policy=policy_module,
@@ -336,8 +337,6 @@ if __name__ == "__main__":
         print("Plotted trajectories")
     if args.get("plot_bellman_violation"):
         print("Calculating and plotting Bellman violation")
-        obs_norm_loc = env.transform[3].loc
-        obs_norm_scale = env.transform[3].scale
         bm_viol = calculate_bellman_violation(10, 
                                             CBF_net,
                                             state_space, 
