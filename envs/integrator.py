@@ -22,7 +22,10 @@ from matplotlib import pyplot as plt
 from matplotlib.ticker import MaxNLocator
 from math import ceil
 from datetime import datetime
-
+from torchrl.data import ReplayBuffer, LazyTensorStorage
+from torchrl.data.replay_buffers.samplers import RandomSampler
+from torchrl.collectors.utils import split_trajectories
+import warnings
         
 class SafeDoubleIntegratorEnv(EnvBase):
     """Stateless environment for discrete double integrator.
@@ -45,7 +48,8 @@ class SafeDoubleIntegratorEnv(EnvBase):
                  batch_size:Union[int,None]=None, 
                  td_params=None, 
                  seed=None, 
-                 device=None):
+                 device=None,
+                 buffer_reset_fraction:float=0.0):
         self.device = device
         if batch_size is None:
             self.batch_size = []
@@ -66,13 +70,26 @@ class SafeDoubleIntegratorEnv(EnvBase):
             seed = torch.empty((), dtype=torch.int64, device=self.device).random_(
                 generator=self.rng).item()
         self.set_seed(seed)
+        self.buffer_reset_fraction = buffer_reset_fraction
+        if self.buffer_reset_fraction > 0.0 :
+            self._initial_state_buffer = ReplayBuffer(
+                storage=LazyTensorStorage(max_size=self.batch_size[0]),
+                sampler=RandomSampler()
+            )
+        self._eval = False
     def _set_seed(self, seed: Optional[int]):
         rng = torch.Generator(device=self.device)
         rng.manual_seed(seed)
         self.rng = rng
     @property
-    def parameters(self):
+    def params(self):
         return self._params
+    @property
+    def evaluate(self):
+        return self._eval
+    @evaluate.setter
+    def evaluate(self, value:bool):
+        self._eval = value
     def _make_spec(self, td_params:TensorDictBase):
         """Creates the tensor specs for the environment
 
@@ -173,6 +190,7 @@ class SafeDoubleIntegratorEnv(EnvBase):
         return out
     def _reset(self,tensordict):
         params = self._params
+
         x1 = (
             torch.rand(self.batch_size,generator=self.rng,device=self.device,dtype=torch.float32)
             *(2*params["max_x1"])
@@ -185,6 +203,26 @@ class SafeDoubleIntegratorEnv(EnvBase):
         )
         terminated= torch.zeros(self.batch_size,dtype=torch.bool,device=self.device)
         done = terminated.clone()
+        if self.buffer_reset_fraction > 0.0 and self._eval == False:
+            # Sample from the buffer
+            num_buffer_samples = min(
+                len(self._initial_state_buffer),
+                int(self.buffer_reset_fraction*self.batch_size[0])
+            )
+            if num_buffer_samples > 0:
+                buffer_samples = self._initial_state_buffer.sample(num_buffer_samples)
+                x1_buffer = buffer_samples["x1"]
+                x2_buffer = buffer_samples["x2"]
+                # Generate random indeces for the collected initial states to be inserted
+                # This way we e
+                indcs = torch.randint(
+                    0,
+                    self.batch_size[0],
+                    (num_buffer_samples,),
+                    device=self.device
+                )
+                x1[indcs] = x1_buffer
+                x2[indcs] = x2_buffer
         out = TensorDict(
             {
             "x1": x1,
@@ -210,11 +248,54 @@ class SafeDoubleIntegratorEnv(EnvBase):
         max_x2 = params["max_x2"]
         return (x1 >= -max_x1) & (x1 <= max_x1) & (x2 >= -max_x2) & (x2 <= max_x2)
 
+    def extend_initial_state_buffer(self,td:TensorDict):
+        """Extends the initial state buffer with the initial states that resulted in
+        a safety violation. This is used to bias the initial states of the environment
+        to be more likely to be in the unsafe region.
+
+        Args:
+            td (TensorDict): The tensordict of rollouts from the environment. E.g.
+            collected from a collector.
+
+        """
+        if self.buffer_reset_fraction == 0.0:
+            # warnings.warn("Adaptive reset is not enabled. Cannot extend initial state buffer.")
+            return
+        if td.batch_size == self.batch_size:
+            # Splitting has likely not been done yet
+            td = split_trajectories(td)
+        collision_traj_ids = torch.where(td["next","reward"] < 0.0)[0]
+        initial_states = TensorDict({
+            "x1": td[collision_traj_ids,0]["x1"].reshape(-1),
+            "x2": td[collision_traj_ids,0]["x2"].reshape(-1)}
+            ,batch_size=collision_traj_ids.shape,
+            device=td.device)
+        self._initial_state_buffer.extend(initial_states)
+        
+    def plot_initial_state_buffer(self,ax):
+        """Plots the initial state buffer. This is used to visualize the
+        initial states that have been collected in the buffer.
+        """
+        if self.buffer_reset_fraction == 0.0:
+            warnings.warn("Adaptive reset is not enabled. Cannot plot initial state buffer.")
+            return
+        x1 = self._initial_state_buffer["x1"].cpu().detach().numpy()
+        x2 = self._initial_state_buffer["x2"].cpu().detach().numpy()
+        ax.plot(x1, x2,'ob')
+        ax.set_xlabel("x1")
+        ax.set_ylabel("x2")
+        ax.set_title("Initial state buffer")
+        ax.set_xlim(-self.params["max_x1"]*1.1, self.params["max_x1"]*1.1)
+        ax.set_ylim(-self.params["max_x2"]*1.1, self.params["max_x2"]*1.1)
+        ax.plot([-self.params["max_x1"], -self.params["max_x1"]], [-self.params["max_x2"], self.params["max_x2"]], "r")
+        ax.plot([self.params["max_x1"], self.params["max_x1"]], [-self.params["max_x2"], self.params["max_x2"]], "r")
+        ax.plot([-self.params["max_x1"], self.params["max_x1"]], [-self.params["max_x2"], -self.params["max_x2"]], "r")
+        ax.plot([-self.params["max_x1"], self.params["max_x1"]], [self.params["max_x2"], self.params["max_x2"]], "r")
+
     @property
     def obs_size_unbatched(self):
         return 2
 
-        
 # TODO:
 # Implement the plotting functionality in a cleaner way
 # Especially the plotting of trajectories ontop of the value function landscape
@@ -224,11 +305,12 @@ class SafeDoubleIntegratorEnv(EnvBase):
 # The key is that the plotting funcitons should be separate from each other, but can
 # be called in sequence to generate the desired plots
 
-def plot_integrator_trajectories(env: EnvBase,
-                                 policy_module: nn.Module,
-                                 rollout_len:int, 
-                                 num_trajectories:int,
-                                 value_net:Optional[nn.Module]=None):
+
+def plot_integrator_trajectories(env,
+                                policy_module: nn.Module,
+                                rollout_len:int, 
+                                num_trajectories:int,
+                                value_net:Optional[nn.Module]=None):
     """Plots the trajectories of the agent in the environment.
 
     Args:
@@ -245,8 +327,8 @@ def plot_integrator_trajectories(env: EnvBase,
 
     fig = plt.figure()
     i=0
-    max_x1 = env.parameters["max_x1"]
-    max_x2 = env.parameters["max_x2"]
+    max_x1 = env.params["max_x1"]
+    max_x2 = env.params["max_x2"]
     print(f"Generating {num_trajectories} trajectories")
     while i < num_trajectories:
         rollouts =  env.rollout(rollout_len, 
@@ -273,6 +355,7 @@ def plot_integrator_trajectories(env: EnvBase,
     plt.title("Trajectories of the agent")
     plt.xlim(-max_x1*1.1, max_x1*1.1)
     plt.ylim(-max_x2*1.1, max_x2*1.1)
+    env.plot_initial_state_buffer(plt.gca())
     if value_net is not None:
         levels = [0.0]
         x1_low = -max_x1*1.1
@@ -293,6 +376,7 @@ def plot_integrator_trajectories(env: EnvBase,
         plt.contourf(mesh[0],mesh[1],value_landscape,levels=levels_locator,cmap='coolwarm')
         plt.colorbar()
     plt.savefig("results/integrator_trajectories" + datetime.now().strftime("%Y%m%d-%H%M%S") + ".pdf")
+        
 def plot_value_function_integrator(max_x1:float, max_x2:float,
                                 resolution:int, 
                                 value_net:nn.Module,
@@ -359,16 +443,9 @@ class MultiObjectiveDoubleIntegratorEnv(SafeDoubleIntegratorEnv):
     """
     primary_reward_key:str = "r1"
     secondary_reward_key:str = "r2"
-    def __init__(self, 
-                 batch_size:Union[int,None]=None,
-                 td_params=None, 
-                 seed=None, 
-                 device=None):
+    def __init__(self,**kwargs):
         batch_locked = True
-        super().__init__(batch_size=batch_size, 
-                         td_params=td_params, 
-                         seed=seed, 
-                         device=device)
+        super().__init__(**kwargs)
     @classmethod
     # For some reason creating the secondary reward function as a modifiable class attribute 
     # does not work with the multisync collector. Instead, the collecor uses the default function
