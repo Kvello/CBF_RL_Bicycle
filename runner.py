@@ -24,7 +24,12 @@ from torch import multiprocessing
 from torchrl.envs.utils import ExplorationType
 from torchrl.modules import ProbabilisticActor, TanhNormal, ValueOperator
 from torchrl.objectives.value import GAE
-from envs.integrator import MultiObjectiveDoubleIntegratorEnv, plot_integrator_trajectories, plot_value_function_integrator
+from envs.integrator import (
+    MultiObjectiveDoubleIntegratorEnv, 
+    plot_integrator_trajectories, 
+    plot_value_function_integrator, 
+    SafeDoubleIntegratorEnv
+)
 from datetime import datetime
 import argparse
 from results.evaluate import PolicyEvaluator, calculate_bellman_violation
@@ -276,7 +281,9 @@ if __name__ == "__main__":
 
         replay_buffer = TensorDictReplayBuffer(
             storage=LazyTensorStorage(max_size=frames_per_batch),
-            sampler=SamplerWithoutReplacement()
+            sampler=PrioritizedSampler(max_capacity=frames_per_batch,
+                                       alpha=args.get("alpha",0.6),
+                                        beta=args.get("beta",0.4)),
             )
         # replay_buffer = TensorDictReplayBuffer(
         #     storage=LazyTensorStorage(max_size=frames_per_batch),
