@@ -23,7 +23,7 @@ from matplotlib.ticker import MaxNLocator
 from math import ceil
 from datetime import datetime
 from torchrl.data import ReplayBuffer, LazyTensorStorage
-from torchrl.data.replay_buffers.samplers import RandomSampler
+from torchrl.data.replay_buffers.samplers import SamplerWithoutReplacement
 from torchrl.collectors.utils import split_trajectories
 import warnings
         
@@ -73,8 +73,8 @@ class SafeDoubleIntegratorEnv(EnvBase):
         self.buffer_reset_fraction = buffer_reset_fraction
         if self.buffer_reset_fraction > 0.0 :
             self._initial_state_buffer = ReplayBuffer(
-                storage=LazyTensorStorage(max_size=self.batch_size[0]),
-                sampler=RandomSampler()
+                storage=LazyTensorStorage(max_size=self.batch_size[0]*buffer_reset_fraction),
+                sampler=SamplerWithoutReplacement()
             )
         self._eval = False
     def _set_seed(self, seed: Optional[int]):
@@ -213,16 +213,13 @@ class SafeDoubleIntegratorEnv(EnvBase):
                 buffer_samples = self._initial_state_buffer.sample(num_buffer_samples)
                 x1_buffer = buffer_samples["x1"]
                 x2_buffer = buffer_samples["x2"]
-                # Generate random indeces for the collected initial states to be inserted
-                # This way we e
-                indcs = torch.randint(
-                    0,
-                    self.batch_size[0],
-                    (num_buffer_samples,),
-                    device=self.device
-                )
-                x1[indcs] = x1_buffer
-                x2[indcs] = x2_buffer
+                # We always place the samples from the buffer in the end of the batch
+                # This way, any trajectories starting from an initial point from the buffer
+                # that terminate will again be started from an initial point from the buffer.
+                # This ensures we always have a proportion equal to 'buffer_fraction'
+                # of the steps from samples that started from initial points in the buffer
+                x1[-num_buffer_samples:] = x1_buffer
+                x2[-num_buffer_samples:] = x2_buffer
         out = TensorDict(
             {
             "x1": x1,
@@ -261,15 +258,36 @@ class SafeDoubleIntegratorEnv(EnvBase):
         if self.buffer_reset_fraction == 0.0:
             # warnings.warn("Adaptive reset is not enabled. Cannot extend initial state buffer.")
             return
-        if td.batch_size == self.batch_size:
+        if td.batch_size[0] == self.batch_size[0]:
             # Splitting has likely not been done yet
-            td = split_trajectories(td)
-        collision_traj_ids = torch.where(td["next","reward"] < 0.0)[0]
+            trajs = split_trajectories(td)
+        else:
+            trajs = td
+        collision_traj_ids = torch.where(trajs["next","reward"] < 0.0)[0]
         initial_states = TensorDict({
-            "x1": td[collision_traj_ids,0]["x1"].reshape(-1),
-            "x2": td[collision_traj_ids,0]["x2"].reshape(-1)}
+            "x1": trajs[collision_traj_ids,0]["x1"].reshape(-1),
+            "x2": trajs[collision_traj_ids,0]["x2"].reshape(-1)}
             ,batch_size=collision_traj_ids.shape,
             device=td.device)
+        #Ignore the initial states that are too similar to the ones in the buffer
+        # This could be implemented more efficiently
+        if len(self._initial_state_buffer) == 0:
+            self._initial_state_buffer.extend(initial_states)
+            return
+        new_vals = torch.stack(
+            [initial_states["x1"], initial_states["x2"]],
+            dim=-1
+        ).unsqueeze(0)
+        buffer_vals = torch.stack(
+            [self._initial_state_buffer["x1"], self._initial_state_buffer["x2"]],
+            dim=-1
+        ).unsqueeze(0)
+        dists = torch.cdist(new_vals, buffer_vals).squeeze(0)
+        min_dists = dists.min(dim=-1)[0]
+        mask = min_dists > 0.1
+        initial_states = initial_states[mask]
+        if initial_states.shape[0] == 0:
+            return
         self._initial_state_buffer.extend(initial_states)
         
     def plot_initial_state_buffer(self,ax):
@@ -281,6 +299,9 @@ class SafeDoubleIntegratorEnv(EnvBase):
             return
         x1 = self._initial_state_buffer["x1"].cpu().detach().numpy()
         x2 = self._initial_state_buffer["x2"].cpu().detach().numpy()
+        print("Plotting initial state buffer")
+        print(f"it has {len(x1)} samples")
+        print(f"x1: {x1}, x2: {x2}")
         ax.plot(x1, x2,'ob')
         ax.set_xlabel("x1")
         ax.set_ylabel("x2")
