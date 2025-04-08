@@ -79,16 +79,8 @@ if __name__ == "__main__":
     frames_per_batch = int(2**12)
     lr = 5e-5
     max_grad_norm = 1.0
-    total_frames = int(2**21)
-    num_epochs = 10  # optimization steps per batch of data collected
-    clip_epsilon = (
-        0.2  # clip value for PPO loss: see the equation in the intro for more context.
-    )
-    critic_coef = 1.0
-    loss_critic_type = "smooth_l1"
+    total_frames = int(2**20)
     sub_batch_size = int(2**8)
-    lmbda = 0.95
-    entropy_eps = 0.0
     nn_net_config = {
         "name": "feedforward",
         "eps": 1e-2,
@@ -124,32 +116,33 @@ if __name__ == "__main__":
     # Arguments:
     #######################
     args["gamma"] = 0.95
-    args["num_epochs"] = num_epochs
+    args["num_epochs"] = 10 # Optimization steps per sub-batch
     args["frames_per_batch"] = frames_per_batch
     args["sub_batch_size"] = sub_batch_size
     args["max_grad_norm"] = max_grad_norm
     args["total_frames"] = total_frames
-    args["entropy_eps"] = entropy_eps
+    args["entropy_eps"] = 0.0
     args["device"] = device
-    args["clip_epsilon"] = clip_epsilon
-    args["lmbda"] = lmbda
-    args["critic_coef"] = critic_coef
-    args["loss_critic_type"] = loss_critic_type
+    args["clip_epsilon"] = 0.2
+    args["lmbda"] = 0.95
+    args["critic_coef"] = 1.0
+    args["loss_critic_type"] = "smooth_l1"
     args["optim_kwargs"] = {"lr": lr}
     args["bellman_eval_res"] = 10
     args["state_space"] = state_space
     # P(i) = p_i^alpha / sum(p_i^alpha)
     # w(i) = 1/(N*P(i))^beta
-    args["alpha"] = 0.0
+    args["alpha"] = 0.8
     args["beta"] = 1.0
-    args["initial_state_buffer_fraction"] = 0.5
+    args["initial_state_buffer_fraction"] = 0.0 # This will be approximately the fraction of the samples
+    # coming from the unsafe region
     args["primary_reward_key"] = "r1"
     args["secondary_reward_key"] = "r2"
     args["CBF_critic_coef"] = 1.0
     args["secondary_critic_coef"] = 1.0
     args["safety_objective_coef"] = 1.0
     args["secondary_objective_coef"] = 0.375
-    args["num_parallel_env"] = int(frames_per_batch / (max_rollout_len))
+    args["num_parallel_env"] = int(2**12)
 
     #######################
     # Environment:
@@ -277,15 +270,14 @@ if __name__ == "__main__":
             frames_per_batch=frames_per_batch,
             total_frames=total_frames,
             split_trajs=False,
+            reset_at_each_iter=False,
             device=device,
             exploration_type=ExplorationType.RANDOM)
 
         replay_buffer = TensorDictReplayBuffer(
             storage=LazyTensorStorage(max_size=frames_per_batch),
-            sampler=PrioritizedSampler(max_capacity=frames_per_batch,
-                                        alpha=args.get("alpha",0.6),
-                                        beta=args.get("beta",0.4)),
-        )
+            sampler=SamplerWithoutReplacement()
+            )
         # replay_buffer = TensorDictReplayBuffer(
         #     storage=LazyTensorStorage(max_size=frames_per_batch),
         #     sampler=SamplerWithoutReplacement(),
