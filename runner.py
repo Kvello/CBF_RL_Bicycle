@@ -62,7 +62,6 @@ def parse_args()->Dict[str,Any]:
                         default=False, help="Track the Bellman violation")
     parser.add_argument("--plot_bellman_violation", action="store_true",
                         default=False, help="Plot the Bellman violation of trained value function and policy")
-    
     return vars(parser.parse_args())
     
 if __name__ == "__main__":
@@ -79,7 +78,7 @@ if __name__ == "__main__":
     frames_per_batch = int(2**12)
     lr = 5e-5
     max_grad_norm = 1.0
-    total_frames = int(2**22)
+    total_frames = int(2**20)
     num_epochs = 10  # optimization steps per batch of data collected
     clip_epsilon = (
         0.2  # clip value for PPO loss: see the equation in the intro for more context.
@@ -89,15 +88,6 @@ if __name__ == "__main__":
     sub_batch_size = int(2**8)
     lmbda = 0.95
     entropy_eps = 0.0
-    nn_net_config = {
-        "name": "feedforward",
-        "eps": 1e-2,
-        "layers": [64, 64],
-        "activation": nn.ReLU(),
-        "device": device,
-        "input_size": 2,
-        "bounded": True,
-    }
         
     #######################
     # Parallelization:
@@ -118,6 +108,8 @@ if __name__ == "__main__":
             "max_x1": max_x1,
             "max_x2": max_x2,
             "max_input": max_input,
+            "reference_amplitude": 1.1,
+            "reference_frequency": 0.05,
         },[],device=device)
         
     #######################
@@ -142,7 +134,7 @@ if __name__ == "__main__":
     # w(i) = 1/(N*P(i))^beta
     args["alpha"] = 0.0
     args["beta"] = 1.0
-    args["primary_reward_key"] = "r1"
+    args["primary_reward_key"] = "r2"
     args["secondary_reward_key"] = "r2"
     args["CBF_critic_coef"] = 1.0
     args["secondary_critic_coef"] = 1.0
@@ -153,12 +145,18 @@ if __name__ == "__main__":
     #######################
     # Environment:
     #######################
-    base_env = MultiObjectiveDoubleIntegratorEnv(batch_size=args.get("batches_per_process"),
+    base_env = MultiObjectiveDoubleIntegratorEnv(batch_size=args.get("num_parallel_env"),
                                                  device=device,
                                                  td_params=parameters)
+    if isinstance(base_env, MultiObjectiveDoubleIntegratorEnv):
+        obs_signals = ["x1", "x2","y1_ref","y2_ref"]
+    elif isinstance(base_env, SafeDoubleIntegratorEnv):
+        obs_signals = ["x1","x2"]
+    else:
+        raise ValueError("Unknown environment type")
     transforms = [
-            UnsqueezeTransform(in_keys=["x1", "x2"], dim=-1,in_keys_inv=["x1","x2"]),
-            CatTensors(in_keys =["x1", "x2"], out_key= "obs",del_keys=False,dim=-1),
+            UnsqueezeTransform(in_keys=obs_signals, dim=-1,in_keys_inv=obs_signals),
+            CatTensors(in_keys =obs_signals, out_key= "obs",del_keys=False,dim=-1),
             ObservationNorm(in_keys=["obs"], out_keys=["obs"]),
             DoubleToFloat(),
             StepCounter(max_steps=max_rollout_len)]
@@ -179,10 +177,18 @@ if __name__ == "__main__":
                                                     else env.action_spec.high)
     action_low = (env.action_spec_unbatched.low if hasattr(env, "action_spec_unbatched") 
                                                     else env.action_spec.low)
-    observation_size_unbatched = (env.obs_size_unbatched if hasattr(env, "obs_size_unbatched") 
-                                                            else env.observation_space.shape[0])
+    observation_size_unbatched = len(obs_signals)
 
 
+    nn_net_config = {
+        "name": "feedforward",
+        "eps": 1e-2,
+        "layers": [64, 64],
+        "activation": nn.ReLU(),
+        "device": device,
+        "input_size": len(obs_signals),
+        "bounded": True,
+    }
     actor_net = nn.Sequential()
     layers = [observation_size_unbatched] + nn_net_config["layers"] 
     for i in range(len(layers)-1):
@@ -268,8 +274,6 @@ if __name__ == "__main__":
     else:
         eval_func = lambda x: evaluator.evaluate_policy()
     if args.get("train"):
-        env_creator = EnvCreator(lambda: env)
-        create_env_fn = [env_creator for _ in range(num_workers)]
         collector = SyncDataCollector(
             create_env_fn=env,
             policy=policy_module,
@@ -331,8 +335,7 @@ if __name__ == "__main__":
         plot_integrator_trajectories(env, 
                                     policy_module,
                                     max_rollout_len,
-                                    args.get("plot_traj"),
-                                    CBF_net)
+                                    args.get("plot_traj"))
         print("Plotted trajectories")
     if args.get("plot_bellman_violation"):
         print("Calculating and plotting Bellman violation")
