@@ -263,4 +263,8 @@ class PPO(RLAlgoBase):
         )
         
         loss_value.backward()
+        torch.nn.utils.clip_grad_norm_(
+            loss_module.parameters(),
+            self.max_grad_norm,
+        )
         return loss_vals
