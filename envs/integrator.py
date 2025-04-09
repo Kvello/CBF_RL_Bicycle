@@ -373,7 +373,7 @@ class MultiObjectiveDoubleIntegratorEnv(SafeDoubleIntegratorEnv):
                 "max_x1": 1.0,
                 "max_x2": 1.0,
                 "reference_amplitude": 1.1,
-                "reference_frequency": 0.1, # Hz(must be smaller than 0.5*1/dt),
+                "reference_frequency": 0.05, # Hz(must be smaller than 0.5*1/dt),
                 # and should be small enough so that the system can likely track it with
                 # subject to the input constraints
                     },[],device=device)
@@ -386,8 +386,14 @@ class MultiObjectiveDoubleIntegratorEnv(SafeDoubleIntegratorEnv):
     # regardless of modifications to the class attribute. Therefore, the function is
     # defined as a static method and called from the step method.
     def _step(self, tensordict: TensorDict)->TensorDict:
-        # 1-norm, 2-norm, or something else? Max-norm? 
-        r2 = torch.abs(tensordict["x1"] - tensordict["y_ref"])
+        # 1-norm, 2-norm, or something else? Max-norm?
+        X = torch.stack(
+            [tensordict["x1"], tensordict["x2"]], dim=0
+        )
+        Y = torch.stack(
+            [tensordict["y1_ref"], tensordict["y2_ref"]], dim=0
+        )
+        r2 = torch.linalg.vector_norm(X-Y, ord=2,dim=0)
         out = super()._step(tensordict)
         r1 = out["reward"].clone()
         r2 = r2.view_as(r1).to(torch.float32)
@@ -397,12 +403,15 @@ class MultiObjectiveDoubleIntegratorEnv(SafeDoubleIntegratorEnv):
         A = params["reference_amplitude"]
         f = params["reference_frequency"]
         dt = params["dt"]
-        y_ref_new = A*torch.sin(f*torch.pi*n_new*dt)
+        y1_ref_new = A*torch.sin(2*torch.pi*f*n_new*dt)
+        y2_ref_new = A*2*torch.pi*f*torch.cos(2*torch.pi*f*n_new*dt)
+
         new_vals = TensorDict({
             MultiObjectiveDoubleIntegratorEnv.primary_reward_key: r1,
             MultiObjectiveDoubleIntegratorEnv.secondary_reward_key: r2,
             "reference_index": n_new,
-            "y_ref": y_ref_new
+            "y1_ref": y1_ref_new,
+            "y2_ref": y2_ref_new,
         },out.batch_size)
         out.update(new_vals)
         return out
@@ -410,13 +419,19 @@ class MultiObjectiveDoubleIntegratorEnv(SafeDoubleIntegratorEnv):
         td = super()._reset(tensordict)
         x1 = td["x1"]
         params = self.parameters
+        A = params["reference_amplitude"]
         f = params["reference_frequency"]
         dt = params["dt"]
-        n = (torch.arcsin(x1)/(dt*f*torch.pi)).to(torch.int32)
-        y_ref = params["reference_amplitude"]*torch.sin(f*n*dt*torch.pi)
+        # Start reference signal from the current position
+        # Could also force the velocity to be correct to begin with, but seems like helping
+        # out too much
+        n = (torch.arcsin(x1)/(2*torch.pi*f*dt)).to(torch.int32)
+        y1_ref = A*torch.sin(2*torch.pi*f*dt*n)
+        y2_ref = A*2*torch.pi*f*torch.cos(2*torch.pi*f*dt*n)
         new_vals = TensorDict({
             "reference_index": n,
-            "y_ref": y_ref
+            "y1_ref": y1_ref,
+            "y2_ref": y2_ref,
         },td.batch_size)
         td.update(new_vals)
         return td
@@ -451,7 +466,11 @@ class MultiObjectiveDoubleIntegratorEnv(SafeDoubleIntegratorEnv):
                     shape=(*self.batch_size,),
                     dtype=torch.int32
                 ),
-                y_ref = UnboundedContinuousTensorSpec(
+                y1_ref = UnboundedContinuousTensorSpec(
+                    shape=(*self.batch_size,),
+                    dtype=torch.float32
+                ),
+                y2_ref = UnboundedContinuousTensorSpec(
                     shape=(*self.batch_size,),
                     dtype=torch.float32
                 ),

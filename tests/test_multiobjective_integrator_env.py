@@ -21,7 +21,7 @@ def test_reset(env):
     td = env.reset()
     
     assert isinstance(td, TensorDict)
-    assert set(td.keys()) == {"x1", "x2","done","terminated","reference_index","y_ref"}
+    assert set(td.keys()) == {"x1", "x2","done","terminated","reference_index","y1_ref","y2_ref"}
     
     # Validate observation spec
     assert env.observation_spec.contains(td), "Reset TensorDict does not match observation spec"
@@ -55,9 +55,10 @@ def test_reward_values(env):
     params = env.parameters
     td["x1"] = x1
     td["reference_index"] = torch.tensor(0,dtype=torch.int32)
-    td["y_ref"] = torch.tensor(0.0,dtype=torch.float32)
+    td["y1_ref"] = torch.tensor(0.0,dtype=torch.float32)
     x2 = params["max_x2"] + 0.01
     td["x2"] = x2
+    td["y2_ref"] = x2
     u = params["max_input"].clone().detach()
     td["action"] = u
     stepped = env.step(td)
@@ -71,17 +72,21 @@ def test_reward_values(env):
     td["x2"] = torch.tensor(0.0,dtype=torch.float32)
     td["action"] = torch.tensor(0.0,dtype=torch.float32)
     td["reference_index"] = torch.tensor(0,dtype=torch.int32)
-    td["y_ref"] = torch.tensor(0.0,dtype=torch.float32)
     
     dt = params["dt"]
-    A_ref = params["reference_amplitude"]
-    f_ref = params["reference_frequency"]
+    A_ref = params["reference_amplitude"].clone().detach()
+    f_ref = params["reference_frequency"].clone().detach()
+
+    td["y1_ref"] = torch.tensor(0.0,dtype=torch.float32)
+    td["y2_ref"] = A_ref*2*torch.pi*f_ref
     for n in range(10):
         # Input 0 to keep the system in the equilibrium
         td = env.step(td) 
-        y_ref = A_ref * torch.sin(f_ref * n*torch.pi*dt)
+        y1_ref = A_ref * torch.sin(f_ref * n*2*torch.pi*dt)
+        y2_ref = A_ref*2*torch.pi*f_ref*torch.cos(f_ref * n*2*torch.pi*dt)
+        Y = torch.stack([y1_ref,y2_ref],dim=0)
         assert td["next","r1"] == 0.0, "The reward for the primary objective should be zero"
-        assert torch.allclose(td["next","r2"],torch.abs(y_ref),atol=1e-6)
+        assert torch.allclose(td["next","r2"],torch.linalg.vector_norm(Y,dim=0,ord=2),atol=1e-6)
         td = step_mdp(td)
         td["action"] = torch.tensor(0.0,dtype=torch.float32)
     
