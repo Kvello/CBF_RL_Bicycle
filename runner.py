@@ -139,7 +139,7 @@ if __name__ == "__main__":
     # w(i) = 1/(N*P(i))^beta
     args["alpha"] = 0.8
     args["beta"] = 1.0
-    args["initial_state_buffer_fraction"] = 0.0 # This will be approximately the fraction of the samples
+    args["initial_state_buffer_fraction"] = 0.5 # This will be approximately the fraction of the samples
     # coming from the unsafe region
     args["primary_reward_key"] = "r1"
     args["secondary_reward_key"] = "r2"
@@ -147,7 +147,7 @@ if __name__ == "__main__":
     args["secondary_critic_coef"] = 1.0
     args["safety_objective_coef"] = 1.0
     args["secondary_objective_coef"] = 0.375
-    args["num_parallel_env"] = int(2**12)
+    args["num_parallel_env"] = int(frames_per_batch / max_rollout_len)
 
     #######################
     # Environment:
@@ -275,7 +275,7 @@ if __name__ == "__main__":
             frames_per_batch=frames_per_batch,
             total_frames=total_frames,
             split_trajs=False,
-            reset_at_each_iter=False,
+            reset_at_each_iter=True,
             device=device,
             exploration_type=ExplorationType.RANDOM)
 
