@@ -365,32 +365,62 @@ class MultiObjectiveDoubleIntegratorEnv(SafeDoubleIntegratorEnv):
                  seed=None, 
                  device=None):
         batch_locked = True
+        if td_params is None:
+            # Default parameters
+            td_params = TensorDict({
+                "dt": 0.01,
+                "max_input": 1.0,
+                "max_x1": 1.0,
+                "max_x2": 1.0,
+                "reference_amplitude": 1.1,
+                "reference_frequency": 0.1, # Hz(must be smaller than 0.5*1/dt),
+                # and should be small enough so that the system can likely track it with
+                # subject to the input constraints
+                    },[],device=device)
         super().__init__(batch_size=batch_size, 
                          td_params=td_params, 
                          seed=seed, 
                          device=device)
-    @classmethod
     # For some reason creating the secondary reward function as a modifiable class attribute 
     # does not work with the multisync collector. Instead, the collecor uses the default function
     # regardless of modifications to the class attribute. Therefore, the function is
     # defined as a static method and called from the step method.
-    @staticmethod
-    def _secondary_reward_func(x1:torch.Tensor, x2:torch.Tensor)->torch.Tensor:
-        return x1*x2
     def _step(self, tensordict: TensorDict)->TensorDict:
-        r2 = torch.as_tensor(
-            MultiObjectiveDoubleIntegratorEnv._secondary_reward_func(tensordict["x1"],
-                                                                     tensordict["x2"])
-        )
+        # 1-norm, 2-norm, or something else? Max-norm? 
+        r2 = torch.abs(tensordict["x1"] - tensordict["y_ref"])
         out = super()._step(tensordict)
         r1 = out["reward"].clone()
         r2 = r2.view_as(r1).to(torch.float32)
+        n_new = tensordict["reference_index"].squeeze() + 1
+
+        params = self.parameters
+        A = params["reference_amplitude"]
+        f = params["reference_frequency"]
+        dt = params["dt"]
+        y_ref_new = A*torch.sin(f*torch.pi*n_new*dt)
         new_vals = TensorDict({
             MultiObjectiveDoubleIntegratorEnv.primary_reward_key: r1,
             MultiObjectiveDoubleIntegratorEnv.secondary_reward_key: r2,
+            "reference_index": n_new,
+            "y_ref": y_ref_new
         },out.batch_size)
         out.update(new_vals)
         return out
+    def _reset(self,tensordict:TensorDict):
+        td = super()._reset(tensordict)
+        x1 = td["x1"]
+        params = self.parameters
+        f = params["reference_frequency"]
+        dt = params["dt"]
+        n = (torch.arcsin(x1)/(dt*f*torch.pi)).to(torch.int32)
+        y_ref = params["reference_amplitude"]*torch.sin(f*n*dt*torch.pi)
+        new_vals = TensorDict({
+            "reference_index": n,
+            "y_ref": y_ref
+        },td.batch_size)
+        td.update(new_vals)
+        return td
+    
     def _make_spec(self, td_params:TensorDictBase):
         super()._make_spec(td_params)
         base_reward_spec = self.reward_spec
@@ -403,5 +433,27 @@ class MultiObjectiveDoubleIntegratorEnv(SafeDoubleIntegratorEnv):
                     dtype=torch.float32
                 )
             },
+            shape=self.batch_size,
+        )
+        self.observation_spec = CompositeSpec(
+            x1 = UnboundedContinuousTensorSpec(
+                shape=self.batch_size,
+                dtype=torch.float32),
+            x2 = UnboundedContinuousTensorSpec(
+                shape=self.batch_size,
+                dtype=torch.float32),
+            shape=self.batch_size,
+        )
+        self.observation_spec = CompositeSpec(
+                x1 = self.observation_spec["x1"],
+                x2 = self.observation_spec["x2"],
+                reference_index = UnboundedContinuousTensorSpec(
+                    shape=(*self.batch_size,),
+                    dtype=torch.int32
+                ),
+                y_ref = UnboundedContinuousTensorSpec(
+                    shape=(*self.batch_size,),
+                    dtype=torch.float32
+                ),
             shape=self.batch_size,
         )
