@@ -71,7 +71,7 @@ class SafeDoubleIntegratorEnv(EnvBase):
         rng.manual_seed(seed)
         self.rng = rng
     @property
-    def parameters(self):
+    def params(self):
         return self._params
     def _make_spec(self, td_params:TensorDictBase):
         """Creates the tensor specs for the environment
@@ -245,8 +245,9 @@ def plot_integrator_trajectories(env: EnvBase,
 
     fig = plt.figure()
     i=0
-    max_x1 = env.parameters["max_x1"]
-    max_x2 = env.parameters["max_x2"]
+    params = env.params
+    max_x1 = params["max_x1"]
+    max_x2 = params["max_x2"]
     print(f"Generating {num_trajectories} trajectories")
     while i < num_trajectories:
         rollouts =  env.rollout(rollout_len, 
@@ -393,13 +394,13 @@ class MultiObjectiveDoubleIntegratorEnv(SafeDoubleIntegratorEnv):
         Y = torch.stack(
             [tensordict["y1_ref"], tensordict["y2_ref"]], dim=0
         )
-        r2 = torch.linalg.vector_norm(X-Y, ord=2,dim=0)
+        r2 = -torch.linalg.vector_norm(X-Y, ord=2,dim=0)
         out = super()._step(tensordict)
         r1 = out["reward"].clone()
         r2 = r2.view_as(r1).to(torch.float32)
         n_new = tensordict["reference_index"].squeeze() + 1
 
-        params = self.parameters
+        params = self.params
         A = params["reference_amplitude"]
         f = params["reference_frequency"]
         dt = params["dt"]
@@ -418,7 +419,7 @@ class MultiObjectiveDoubleIntegratorEnv(SafeDoubleIntegratorEnv):
     def _reset(self,tensordict:TensorDict):
         td = super()._reset(tensordict)
         x1 = td["x1"]
-        params = self.parameters
+        params = self.params
         A = params["reference_amplitude"]
         f = params["reference_frequency"]
         dt = params["dt"]
