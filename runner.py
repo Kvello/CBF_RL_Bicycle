@@ -78,7 +78,7 @@ if __name__ == "__main__":
     frames_per_batch = int(2**12)
     lr = 5e-5
     max_grad_norm = 1.0
-    total_frames = int(2**20)
+    total_frames = int(2**22)
     num_epochs = 10  # optimization steps per batch of data collected
     clip_epsilon = (
         0.2  # clip value for PPO loss: see the equation in the intro for more context.
@@ -108,8 +108,8 @@ if __name__ == "__main__":
             "max_x1": max_x1,
             "max_x2": max_x2,
             "max_input": max_input,
-            "reference_amplitude": 1.1,
-            "reference_frequency": 0.05,
+            "reference_amplitude": 0.5,
+            "reference_frequency": 0.3,
         },[],device=device)
         
     #######################
@@ -137,6 +137,7 @@ if __name__ == "__main__":
     args["primary_reward_key"] = "r2"
     args["secondary_reward_key"] = "r2"
     args["CBF_critic_coef"] = 1.0
+    args["entropy_coef"] = 0.01
     args["secondary_critic_coef"] = 1.0
     args["safety_objective_coef"] = 1.0
     args["secondary_objective_coef"] = 0.375
