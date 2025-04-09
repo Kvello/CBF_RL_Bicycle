@@ -157,7 +157,7 @@ class SafeDoubleIntegratorEnv(EnvBase):
         x2_new = x2 + u*dt
 
         # Done
-        terminated = costs > 0
+        terminated = torch.zeros_like(x1,dtype=torch.bool)
         done = terminated.clone()
         # Reward
         reward = -costs.view(*tensordict.shape,1)
@@ -395,6 +395,7 @@ class MultiObjectiveDoubleIntegratorEnv(SafeDoubleIntegratorEnv):
             [tensordict["y1_ref"], tensordict["y2_ref"]], dim=0
         )
         r2 = -torch.linalg.vector_norm(X-Y, ord=2,dim=0)
+        # r2 = -torch.abs(tensordict["x1"] - tensordict["y1_ref"])
         out = super()._step(tensordict)
         r1 = out["reward"].clone()
         r2 = r2.view_as(r1).to(torch.float32)
