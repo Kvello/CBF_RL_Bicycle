@@ -84,7 +84,7 @@ if __name__ == "__main__":
     frames_per_batch = int(2**12)
     lr = 5e-5
     max_grad_norm = 1.0
-    total_frames = int(2**20)
+    total_frames = int(2**22)
     sub_batch_size = int(2**8)
     nn_net_config = {
         "name": "feedforward",
@@ -139,7 +139,7 @@ if __name__ == "__main__":
     # w(i) = 1/(N*P(i))^beta
     args["alpha"] = 0.8
     args["beta"] = 1.0
-    args["initial_state_buffer_fraction"] = 0.5 # This will be approximately the fraction of the samples
+    args["initial_state_buffer_fraction"] = 0.0 # This will be approximately the fraction of the samples
     # coming from the unsafe region
     args["primary_reward_key"] = "r1"
     args["secondary_reward_key"] = "r2"
