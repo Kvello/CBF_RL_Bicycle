@@ -52,7 +52,7 @@ def test_safe_double_integrator_env_multi_step(env):
 def test_cost_and_reset(env):
     td = env.reset()
     obs_spec = env.observation_spec
-    params = env.parameters
+    params = env.params
     td["x1"] = torch.tensor(0.0,dtype=torch.float32)
     td["x2"] = params["max_x2"] + 0.01
     td["action"] = params["max_input"].clone().detach()
@@ -112,3 +112,75 @@ def test_batched_max_step_safe_double_integrator_env():
     assert (td["terminated"] == False).all(), "The episode should not have terminated"
     assert td["done"].all(), "The episode should have ended"
     assert td["truncated"].all(), "The episode should have been truncated"
+
+def test_initial_state_buffer_all_colisions():
+    batch_size = 8
+    env = SafeDoubleIntegratorEnv(batch_size=batch_size,
+                                  buffer_reset_fraction=1.0)
+    buffer = env._initial_state_buffer
+    assert buffer is not None, "The initial state buffer should not be None"
+    td = env.reset()
+    params = env.params
+    x1 = torch.linspace(-params["max_x1"],
+                              params["max_x1"],
+                              batch_size)
+    x2 = torch.ones(batch_size) * params["max_x2"] + 0.01
+    td["x1"] = x1
+    td["x2"] = x2
+    td["action"] = torch.ones(batch_size,1)*params["max_input"].clone().detach()
+    td = env.step(td)
+    assert (td["next","reward"] == -1.0).all(), "The cost of the state is not positive"
+    env.extend_initial_state_buffer(td)
+    buffer = env._initial_state_buffer
+    assert buffer["x1"].shape == (batch_size,)
+    assert buffer["x2"].shape == (batch_size,)
+    assert torch.equal(
+        torch.sort(buffer["x1"]).values,torch.sort(x1).values,
+        ), "The initial state buffer should contain the colliding states"
+    assert torch.equal(
+        torch.sort(buffer["x2"]).values,torch.sort(x2).values,
+        ), "The initial state buffer should contain the colliding states"
+    td = env.reset()
+    assert td["x1"].shape == (batch_size,)
+    assert td["x2"].shape == (batch_size,)
+    assert torch.equal(
+        torch.sort(td["x1"]).values,torch.sort(x1).values,
+        ), "The initial state buffer should contain the colliding states"
+    assert torch.equal(
+        torch.sort(td["x2"]).values,torch.sort(x2).values,
+        ), "The initial state buffer should contain the colliding states"
+
+def test_initial_state_buffer_half_collisions():
+    batch_size = 8
+    buffer_frac = 0.5
+    env = SafeDoubleIntegratorEnv(batch_size=batch_size,
+                                  buffer_reset_fraction=buffer_frac)
+    buffer = env._initial_state_buffer
+    assert buffer is not None, "The initial state buffer should not be None"
+    td = env.reset()
+    params = env.params
+    x1_collision = torch.linspace(-params["max_x1"],
+                              params["max_x1"],
+                              int(batch_size*buffer_frac))
+    x2_collision = torch.ones(int(batch_size*buffer_frac)) * params["max_x2"] + 0.01
+    x1_safe = torch.linspace(-params["max_x1"],
+                              params["max_x1"],
+                              int(batch_size*buffer_frac))
+    x2_safe = torch.zeros(int(batch_size*buffer_frac))
+    td["x1"] = torch.cat([x1_collision,x1_safe])
+    td["x2"] = torch.cat([x2_collision,x2_safe])
+    td["action"] = torch.zeros(batch_size,1)
+    td = env.step(td)
+    assert td["next","reward"].sum()==pytest.approx(-1*buffer_frac*batch_size,abs=1e-6),\
+        "The cost of the state is not positive"
+    env.extend_initial_state_buffer(td)
+    buffer = env._initial_state_buffer
+    assert buffer["x1"].shape == (batch_size*buffer_frac,)
+    assert buffer["x2"].shape == (batch_size*buffer_frac,)
+    assert torch.isin(x1_collision,buffer["x1"]).all(), "All the collision states should be in the buffer"
+    assert torch.isin(x2_collision,buffer["x2"]).all(), "All the collision states should be in the buffer"
+    td = env.reset()
+    assert td["x1"].shape == (batch_size,)
+    assert td["x2"].shape == (batch_size,)
+    assert torch.isin(x1_collision,td["x1"]).all(), "All the collision states should be returned from the reset"
+    assert torch.isin(x2_collision,td["x2"]).all(), "All the collision states should be returned from the reset" 
