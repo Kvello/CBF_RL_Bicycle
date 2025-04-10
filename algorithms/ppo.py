@@ -10,7 +10,7 @@ from torchrl.envs import (
     EnvBase,
     Transform,
 )
-from torchrl.objectives.value import GAE
+from torchrl.objectives.value import GAE, TD0Estimator
 from torchrl.envs.utils import ExplorationType
 from torchrl.objectives import ClipPPOLoss, LossModule
 from tqdm import tqdm
@@ -107,11 +107,9 @@ class PPO(RLAlgoBase):
                     name=self.config.get("experiment_name", None),
                     config = {**self.config,"method": "ppo"})
             
-        self.advantage_module = GAE(
+        self.advantage_module = TD0Estimator(
             gamma=self.gamma,
-            lmbda=self.lmbda,
             value_network=value_module,
-            average_gae=True,
             device=self.device,
         )
         self.advantage_module.set_keys(
@@ -241,7 +239,7 @@ class PPO(RLAlgoBase):
         state_value = loss_module.critic_network(tensordict)[value_key]
         with torch.no_grad():
             tensordict["td_error"] = torch.abs(tensordict["value_target"] - state_value)
-        critic_loss = torch.nn.HuberLoss(reduction='none')(state_value, tensordict["value_target"])
+        critic_loss = torch.nn.MSELoss(reduction='none')(state_value, tensordict["value_target"])
         # Allow for importance sampling of the samples
         if "_weight" in tensordict:
             critic_loss = (tensordict["_weight"] * critic_loss).mean() 
