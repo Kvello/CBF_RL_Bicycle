@@ -3,6 +3,7 @@ from torchrl import envs
 from torchrl.envs.common import EnvBase
 from torchrl.envs import step_mdp
 from tensordict import TensorDict
+from tensordict.nn import TensorDictModule
 from torchrl.envs.transforms import TransformedEnv, StepCounter
 import torch
 import pytest
@@ -184,3 +185,43 @@ def test_initial_state_buffer_half_collisions():
     assert td["x2"].shape == (batch_size,)
     assert torch.isin(x1_collision,td["x1"]).all(), "All the collision states should be returned from the reset"
     assert torch.isin(x2_collision,td["x2"]).all(), "All the collision states should be returned from the reset" 
+
+def test_initial_state_buffer_multistep():
+    batch_size = 8
+    buffer_frac = 1.0
+    env = SafeDoubleIntegratorEnv(batch_size=batch_size,
+                                  buffer_reset_fraction=buffer_frac)
+    buffer = env._initial_state_buffer
+    assert buffer is not None, "The initial state buffer should not be None"
+    td = env.reset()
+    params = env.params
+    x1 = torch.linspace(-params["max_x1"],
+                              params["max_x1"],
+                              int(batch_size*buffer_frac))
+    x2 = torch.ones(int(batch_size*buffer_frac)) * params["max_x2"] - 0.1
+    # All initial states are not safety violating
+    td["x1"] = x1
+    td["x2"] = x2
+    # Apply max force 
+    u = torch.ones(batch_size,1)*params["max_input"].clone().detach()
+    policy = TensorDictModule(lambda : u,in_keys=[],out_keys=["action"])
+    # 11 timesteps should be enough to ensure that all the states are safety violating
+    td = env.rollout(max_steps=12,
+                     tensordict=td,
+                     auto_reset=False,
+                     break_when_any_done=False,
+                     policy=policy)
+    assert td["next","reward"].sum().item() == -1*buffer_frac*batch_size,\
+        "The test assumes that all the states should be safety violating"
+    env.extend_initial_state_buffer(td)
+    buffer = env._initial_state_buffer
+    assert buffer["x1"].shape == (batch_size,)
+    assert buffer["x2"].shape == (batch_size,)
+    assert torch.isin(x1,buffer["x1"]).all(), "All the collision states should be in the buffer"
+    assert torch.isin(x2,buffer["x2"]).all(), "All the collision states should be in the buffer"
+    td = env.reset()
+    assert td["x1"].shape == (batch_size,)
+    assert td["x2"].shape == (batch_size,)
+    assert torch.isin(x1,td["x1"]).all(), "All the collision states should be returned from the reset"
+    assert torch.isin(x2,td["x2"]).all(), "All the collision states should be returned from the reset"
+    
