@@ -439,7 +439,7 @@ class MultiObjectiveDoubleIntegratorEnv(SafeDoubleIntegratorEnv):
         # select starting point so that x2(0) is also as close as possible to the reference signal
         n = torch.where(
             x2 < 0.0,
-            (1/(2*f*dt) -n).to(torch.int32),
+            (1/(2*pi*f*dt) -n).to(torch.int32),
             n
         )
         # Note that arcsin gives values in the range [-pi/2, pi/2]
