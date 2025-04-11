@@ -23,6 +23,7 @@ class FfSafetyValueFunction(SafetyValueFunctionBase):
     """
     def __init__(self,
                  input_size:int,
+                 gamma:float,
                  device:torch.device=torch.device("cpu"),
                  layers:List[int] = [64,64],
                  activation:nn.Module = nn.ReLU(),
@@ -32,6 +33,7 @@ class FfSafetyValueFunction(SafetyValueFunctionBase):
         self.layers = nn.Sequential() 
         self.bounded = bounded
         self.eps = eps
+        self.gamma = gamma
         self.device = device
         dims = [input_size] +layers 
         for i in range(len(dims)-1):
@@ -41,7 +43,7 @@ class FfSafetyValueFunction(SafetyValueFunctionBase):
     def forward(self, x:torch.Tensor):
         ff = self.layers(x)
         if self.bounded:
-            return -torch.sigmoid(ff)*(1+self.eps) + self.eps
+            return torch.sigmoid(ff)*(1/(1-self.gamma)) + self.eps
         else:
             return ff
 

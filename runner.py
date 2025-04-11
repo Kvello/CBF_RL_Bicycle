@@ -84,17 +84,8 @@ if __name__ == "__main__":
     frames_per_batch = int(2**12)
     lr = 5e-5
     max_grad_norm = 1.0
-    total_frames = int(2**20)
+    total_frames = int(2**22)
     sub_batch_size = int(2**8)
-    nn_net_config = {
-        "name": "feedforward",
-        "eps": 1e-2,
-        "layers": [64, 64],
-        "activation": nn.ReLU(),
-        "device": device,
-        "input_size": 2,
-        "bounded": True,
-    }
         
     #######################
     # Parallelization:
@@ -176,6 +167,16 @@ if __name__ == "__main__":
     # Models:
     #######################
 
+    nn_net_config = {
+        "name": "feedforward",
+        "eps": 0.1,
+        "layers": [64, 64],
+        "activation": nn.ReLU(),
+        "device": device,
+        "input_size": 2,
+        "bounded": True,
+        "gamma": args.get("gamma"),
+    }
     # Handle both batch-locked and unbatched action specs
     action_high = (env.action_spec_unbatched.high if hasattr(env, "action_spec_unbatched") 
                                                     else env.action_spec.high)
@@ -333,7 +334,8 @@ if __name__ == "__main__":
                                     policy_module,
                                     max_rollout_len,
                                     args.get("plot_traj"),
-                                    CBF_net)
+                                    CBF_net,
+                                    levels=[1/(1-args.get("gamma"))])
         print("Plotted trajectories")
     if args.get("plot_bellman_violation"):
         print("Calculating and plotting Bellman violation")

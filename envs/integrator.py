@@ -160,11 +160,11 @@ class SafeDoubleIntegratorEnv(EnvBase):
         # only be detected in the next step, and we won't set termiated to True immeadiately
         # This is a design choice, and can be changed if needed
         params = self._params
-        costs = torch.zeros_like(x1)
-        costs = torch.where(
+        rewards = torch.ones_like(x1)
+        rewards = torch.where(
             SafeDoubleIntegratorEnv.constraints_satisfied(params,x1, x2), 
-            costs, 
-            torch.tensor(1.0,device=x1.device)
+            rewards, 
+            torch.tensor(0.0,device=x1.device)
         )
 
         dt = params["dt"]
@@ -174,10 +174,10 @@ class SafeDoubleIntegratorEnv(EnvBase):
         x2_new = x2 + u*dt
 
         # Done
-        terminated = costs > 0
+        terminated = rewards == 0.0
         done = terminated.clone()
         # Reward
-        reward = -costs.view(*tensordict.shape,1)
+        reward = rewards.view(*tensordict.shape,1)
 
         out = TensorDict({
             "x1": x1_new,
@@ -331,7 +331,8 @@ def plot_integrator_trajectories(env,
                                 policy_module: nn.Module,
                                 rollout_len:int, 
                                 num_trajectories:int,
-                                value_net:Optional[nn.Module]=None):
+                                value_net:Optional[nn.Module]=None,
+                                levels:List[float] = [0.0]):
     """Plots the trajectories of the agent in the environment.
 
     Args:
@@ -378,7 +379,6 @@ def plot_integrator_trajectories(env,
     plt.ylim(-max_x2*1.1, max_x2*1.1)
     env.plot_initial_state_buffer(plt.gca())
     if value_net is not None:
-        levels = [0.0]
         x1_low = -max_x1*1.1
         x1_high = max_x1*1.1
         x2_low = -max_x2*1.1
