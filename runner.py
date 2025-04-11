@@ -84,7 +84,7 @@ if __name__ == "__main__":
     frames_per_batch = int(2**12)
     lr = 5e-5
     max_grad_norm = 1.0
-    total_frames = int(2**22)
+    total_frames = int(2**20)
     sub_batch_size = int(2**8)
     nn_net_config = {
         "name": "feedforward",
@@ -126,15 +126,16 @@ if __name__ == "__main__":
     args["sub_batch_size"] = sub_batch_size
     args["max_grad_norm"] = max_grad_norm
     args["total_frames"] = total_frames
-    args["entropy_eps"] = 0.0
+    args["entropy_coef"] = 0.001
     args["device"] = device
     args["clip_epsilon"] = 0.2
-    args["lmbda"] = 0.95
+    args["lmbda"] = 0.1
     args["critic_coef"] = 1.0
-    args["loss_critic_type"] = "smooth_l1"
+    args["loss_critic_type"] = "l2"
     args["optim_kwargs"] = {"lr": lr}
     args["bellman_eval_res"] = 10
     args["state_space"] = state_space
+    args["clip_grad"] = False
     # P(i) = p_i^alpha / sum(p_i^alpha)
     # w(i) = 1/(N*P(i))^beta
     args["alpha"] = 0.8
