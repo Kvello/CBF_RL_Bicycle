@@ -10,7 +10,7 @@ from torchrl.envs import (
     EnvBase,
     Transform,
 )
-from torchrl.objectives.value import GAE, TD0Estimator
+from torchrl.objectives.value import GAE, TD0Estimator, TD1Estimator, TDLambdaEstimator
 from torchrl.envs.utils import ExplorationType
 from torchrl.objectives import ClipPPOLoss, LossModule
 from tqdm import tqdm
@@ -57,6 +57,12 @@ class PPO(RLAlgoBase):
         
         warn_str = "secondary_reward_key not found in config, using default value of 'r2'"
         self.secondary_reward_key = get_config_value(config, "secondary_reward_key", "r2", warn_str)
+        
+        warn_str = "clip_grad not found in config, using default value of 'False'"
+        self.clip_grad = get_config_value(config, "clip_grad", False, warn_str)
+
+        warn_str = "entropy_coef not found in config, using default value of 0.0"
+        self.entropy_coef = get_config_value(config, "entropy_coef", 0.0, warn_str)
 
         self.loss_value_log_keys = ["loss_safety_objective", "loss_CBF"]
         self.reward_keys = {self.primary_reward_key, self.secondary_reward_key}
@@ -107,7 +113,9 @@ class PPO(RLAlgoBase):
                     name=self.config.get("experiment_name", None),
                     config = {**self.config,"method": "ppo"})
             
-        self.advantage_module = TD0Estimator(
+        self.advantage_module = GAE(
+            lmbda=self.lmbda,
+            average_gae=False,
             gamma=self.gamma,
             value_network=value_module,
             device=self.device,
@@ -123,8 +131,8 @@ class PPO(RLAlgoBase):
             actor_network=policy_module,
             critic_network=value_module,
             clip_epsilon=self.clip_epsilon,
-            entropy_bonus=False,
-            entropy_coef=0.0,
+            entropy_bonus=bool(self.entropy_coef),
+            entropy_coef=self.entropy_coef,
             critic_coef=self.critic_coef,
             loss_critic_type=self.loss_critictype,
         )
@@ -239,7 +247,12 @@ class PPO(RLAlgoBase):
         state_value = loss_module.critic_network(tensordict)[value_key]
         with torch.no_grad():
             tensordict["td_error"] = torch.abs(tensordict["value_target"] - state_value)
-        critic_loss = torch.nn.MSELoss(reduction='none')(state_value, tensordict["value_target"])
+        if self.loss_critictype == "smooth_l1":
+            critic_loss = torch.nn.HuberLoss(reduction='none')(state_value, tensordict["value_target"])
+        elif self.loss_critictype == "l1":
+            critic_loss = torch.nn.L1Loss(reduction='none')(state_value, tensordict["value_target"])
+        elif self.loss_critictype == "l2":
+            critic_loss = torch.nn.MSELoss(reduction='none')(state_value, tensordict["value_target"])
         # Allow for importance sampling of the samples
         if "_weight" in tensordict:
             critic_loss = (tensordict["_weight"] * critic_loss).mean() 
@@ -259,11 +272,13 @@ class PPO(RLAlgoBase):
         loss_value = (
             loss_vals["loss_safety_objective"]
             + loss_vals["loss_CBF"]
+            + loss_vals["loss_entropy"]
         )
         
         loss_value.backward()
-        torch.nn.utils.clip_grad_norm_(
-            loss_module.parameters(),
-            self.max_grad_norm,
-        )
+        if self.clip_grad:
+            torch.nn.utils.clip_grad_norm_(
+                loss_module.parameters(),
+                self.max_grad_norm,
+            )
         return loss_vals
