@@ -126,20 +126,21 @@ if __name__ == "__main__":
     args["sub_batch_size"] = sub_batch_size
     args["max_grad_norm"] = max_grad_norm
     args["total_frames"] = total_frames
-    args["entropy_eps"] = 0.0
+    args["entropy_coef"] = 0.001
     args["device"] = device
     args["clip_epsilon"] = 0.2
-    args["lmbda"] = 0.95
+    args["lmbda"] = 0.1
     args["critic_coef"] = 1.0
-    args["loss_critic_type"] = "smooth_l1"
+    args["loss_critic_type"] = "l2"
     args["optim_kwargs"] = {"lr": lr}
     args["bellman_eval_res"] = 10
     args["state_space"] = state_space
+    args["clip_grad"] = False
     # P(i) = p_i^alpha / sum(p_i^alpha)
     # w(i) = 1/(N*P(i))^beta
     args["alpha"] = 0.8
     args["beta"] = 1.0
-    args["initial_state_buffer_fraction"] = 0.5 # This will be approximately the fraction of the samples
+    args["initial_state_buffer_fraction"] = 0.0 # This will be approximately the fraction of the samples
     # coming from the unsafe region
     args["primary_reward_key"] = "r1"
     args["secondary_reward_key"] = "r2"
