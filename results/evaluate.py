@@ -39,7 +39,14 @@ class PolicyEvaluator:
             )
             for key in self.keys_to_log:
                 if key in eval_rollout["next"]:
-                    logs[f"eval {key}(average)"] = (eval_rollout["next", key].to(torch.float32).mean().item())
+                    if key == "step_count":
+                        logs[f"eval {key}(average)"] = (
+                            eval_rollout[key].max(dim=1).values.to(torch.float32).mean().item()
+                        )
+                    else:
+                        logs[f"eval {key}(average)"] = (
+                            eval_rollout["next", key].to(torch.float32).mean().item()
+                        )
                 elif key in eval_rollout:
                     logs[f"eval {key}(average)"] = (eval_rollout[key].to(torch.float32).mean().item())
             del eval_rollout

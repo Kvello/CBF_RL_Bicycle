@@ -220,7 +220,9 @@ class PPO(RLAlgoBase):
             logs[key] /= self.num_epochs
         for key in self.reward_keys:
             logs[key] = tensordict_data["next",key].to(torch.float32).mean().item()
-        logs["step_count(average)"] = tensordict_data["step_count"].to(torch.float32).mean().item()
+        logs["step_count(average)"] = (
+            tensordict_data["step_count"].max(dim=1).values.to(torch.float32).mean().item()
+        )
         logs["lr"] = optim.param_groups[0]["lr"]
         if eval_func is not None:
             logs.update(eval_func(tensordict_data))
