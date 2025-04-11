@@ -70,7 +70,6 @@ if __name__ == "__main__":
     #######################
     # Hyperparameters:
     #######################
-    num_cells = 64
     max_input = 1.0
     max_x1 = 1.0
     max_x2 = 1.0
@@ -78,7 +77,7 @@ if __name__ == "__main__":
     frames_per_batch = int(2**12)
     lr = 5e-5
     max_grad_norm = 1.0
-    total_frames = int(2**20)
+    total_frames = int(2**21)
     num_epochs = 10  # optimization steps per batch of data collected
     clip_epsilon = (
         0.2  # clip value for PPO loss: see the equation in the intro for more context.
@@ -87,7 +86,6 @@ if __name__ == "__main__":
     loss_critic_type = "smooth_l1"
     sub_batch_size = int(2**8)
     lmbda = 0.95
-    entropy_eps = 0.0
         
     #######################
     # Parallelization:
@@ -121,7 +119,6 @@ if __name__ == "__main__":
     args["sub_batch_size"] = sub_batch_size
     args["max_grad_norm"] = max_grad_norm
     args["total_frames"] = total_frames
-    args["entropy_eps"] = entropy_eps
     args["device"] = device
     args["clip_epsilon"] = clip_epsilon
     args["lmbda"] = lmbda
@@ -137,7 +134,7 @@ if __name__ == "__main__":
     args["primary_reward_key"] = "r2"
     args["secondary_reward_key"] = "r2"
     args["CBF_critic_coef"] = 1.0
-    args["entropy_coef"] = 0.01
+    args["entropy_coef"] = 0.001
     args["secondary_critic_coef"] = 1.0
     args["safety_objective_coef"] = 1.0
     args["secondary_objective_coef"] = 0.375
