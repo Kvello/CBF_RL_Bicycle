@@ -114,8 +114,8 @@ def calculate_bellman_violation(resolution:int,
         td = env.step(policy_module(td))
         td_next = step_mdp(td)
         next_values = value_net(td_next["obs"]).detach()
-    costs = -td["next","reward"]
+    rewards = td["next","reward"]
     done = td_next["done"]
-    bellman_violation_tensor = (costs + gamma*next_values*~done - values).abs()
+    bellman_violation_tensor = (rewards + gamma*next_values*~done - values).abs()
     bellman_violation_tensor = bellman_violation_tensor.reshape(mesh[0].shape)
     return bellman_violation_tensor.cpu().numpy()
