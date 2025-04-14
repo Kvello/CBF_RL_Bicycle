@@ -15,7 +15,7 @@ class HiPPOLoss(LossModule):
         secondary_reward_key: str = "r2",
         *,
         clip_epsilon: float = 0.2,
-        entropy_bonus: bool = True,
+        entropy_coef: float = 0.0,
         samples_mc_entropy: int = 1,
         critic_coef: float = 1.0,
         normalize_advantage: bool = False,
@@ -39,8 +39,8 @@ class HiPPOLoss(LossModule):
             actor_network=actor,
             critic_network=primary_critic,
             clip_epsilon=clip_epsilon,
-            entropy_bonus=False,
-            entropy_coef=0.0,
+            entropy_bonus=bool(entropy_coef),
+            entropy_coef=entropy_coef,
             critic_coef=self.critic_coef,
             loss_critic_type="smooth_l1",
         )
@@ -54,8 +54,8 @@ class HiPPOLoss(LossModule):
             actor_network=actor,
             critic_network=secondary_critic,
             clip_epsilon=clip_epsilon,
-            entropy_bonus=False,
-            entropy_coef=0.0,
+            entropy_bonus=bool(entropy_coef),
+            entropy_coef=entropy_coef,
             critic_coef=self.critic_coef,
             loss_critic_type="smooth_l1",
         )
@@ -71,8 +71,9 @@ class HiPPOLoss(LossModule):
             keys = ["loss_safety_objective",
                     "loss_secondary_objective",
                     "loss_CBF",
-                    "loss_secondary_critic"]
-            keys.append("ESS")
+                    "loss_secondary_critic",
+                    "loss_safety_entropy",
+                    "loss_secondary_entropy"]
             self._out_keys = keys
         return self._out_keys
 
@@ -108,6 +109,8 @@ class HiPPOLoss(LossModule):
                 "loss_secondary_objective": secondary_loss_vals["loss_objective"],
                 "loss_CBF": primary_loss_vals["loss_critic"],
                 "loss_secondary_critic": secondary_loss_vals["loss_critic"],
+                "loss_safety_entropy": primary_loss_vals["loss_entropy"],
+                "loss_secondary_entropy": secondary_loss_vals["loss_entropy"],
             }
         )
         return td_out
