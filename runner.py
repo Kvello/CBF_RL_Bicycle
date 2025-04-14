@@ -31,6 +31,7 @@ from results.evaluate import PolicyEvaluator, calculate_bellman_violation
 from models.factory import SafetyValueFunctionFactory
 from algorithms.hippo import HierarchicalPPO as HiPPO
 from algorithms.ppo import PPO
+from utils.filters import RunningLowPassNormalizer, RunningMeanNormalizer
 
 
 multiprocessing.set_start_method("spawn", force=True)
@@ -126,7 +127,7 @@ if __name__ == "__main__":
     # w(i) = 1/(N*P(i))^beta
     args["alpha"] = 0.0
     args["beta"] = 1.0
-    args["primary_reward_key"] = "r2"
+    args["primary_reward_key"] = "r1"
     args["secondary_reward_key"] = "r2"
     args["CBF_critic_coef"] = 1.0
     args["entropy_coef"] = 0.001
@@ -134,6 +135,13 @@ if __name__ == "__main__":
     args["safety_objective_coef"] = 1.0
     args["secondary_objective_coef"] = 0.375
     args["num_parallel_env"] = int(frames_per_batch / (max_rollout_len))
+    # Gradient scaling (for HiPPO)
+    target_gradient_ratio = 0.2
+    args["debug"] = False
+    args["gradient_normalization"] = "lowpass"
+    args["gradient_normalization_kwargs"] = {"alpha": 0.001, 
+                                             "initial_value": target_gradient_ratio,
+                                             "offset": target_gradient_ratio}
 
     #######################
     # Environment:
