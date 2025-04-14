@@ -157,7 +157,7 @@ class SafeDoubleIntegratorEnv(EnvBase):
         x2_new = x2 + u*dt
 
         # Done
-        terminated = torch.zeros_like(x1,dtype=torch.bool)
+        terminated = costs > 0.0
         done = terminated.clone()
         # Reward
         reward = -costs.view(*tensordict.shape,1)
