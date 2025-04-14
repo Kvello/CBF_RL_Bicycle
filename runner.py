@@ -1,6 +1,7 @@
 from collections import defaultdict
 import matplotlib.pyplot as plt
 import torch
+import wandb
 from typing import List, Dict, Any
 from tensordict.nn import TensorDictModule
 from torch import nn
@@ -55,7 +56,7 @@ def parse_args()->Dict[str,Any]:
     parser.add_argument("--plot_traj", type=int, default=0, help="Number of trajectories to plot")
     parser.add_argument("--save", action="store_true", default=False, help="Save the models")
     parser.add_argument("--plot_CBF", action="store_true", default=False, help="Plot the value function landscape")
-    parser.add_argument("--max_rollout_len", type=int, default=100, help="Maximum rollout length")
+    parser.add_argument("--max_rollout_len", type=int, default=32, help="Maximum rollout length")
     parser.add_argument("--track", action="store_true", default=False, help="Track the training with wandb")
     parser.add_argument("--wandb_project", type=str, default="ppo_safe_integrator", help="Wandb project name")
     parser.add_argument("--experiment_name", type=str, default=None, help="Wandb experiment name")
@@ -68,25 +69,10 @@ def parse_args()->Dict[str,Any]:
 if __name__ == "__main__":
     args = parse_args() 
 
-    #######################
-    # Hyperparameters:
-    #######################
-    max_input = 1.0
-    max_x1 = 1.0
-    max_x2 = 1.0
-    dt = 0.05
-    frames_per_batch = int(2**12)
-    lr = 5e-5
-    max_grad_norm = 1.0
-    total_frames = int(2**20)
-    num_epochs = 10  # optimization steps per batch of data collected
-    loss_critic_type = "smooth_l1"
-    sub_batch_size = int(2**8)
         
     #######################
     # Parallelization:
     #######################
-    max_rollout_len = args.get("max_rollout_len")
     multiprocessing.set_start_method("spawn", force=True)
     is_fork = multiprocessing.get_start_method(allow_none=True) == "fork"
     device = (
@@ -94,33 +80,34 @@ if __name__ == "__main__":
         if torch.cuda.is_available() and not is_fork
         else torch.device("cpu")
     )
-    state_space = {"x1": {"low": -max_x1, "high": max_x1},
-                    "x2": {"low": -max_x2, "high": max_x2}}
 
     parameters = TensorDict({
-            "dt": dt,
-            "max_x1": max_x1,
-            "max_x2": max_x2,
-            "max_input": max_input,
-            "reference_amplitude": 1.0,
+            "dt": 0.05,
+            "max_x1": 1.0,
+            "max_x2": 1.0,
+            "max_input": 1.0,
+            "reference_amplitude": 1.1,
             "reference_frequency": 0.1, # rule of thumb: < max_u/(2*pi*sqrt(A))
         },[],device=device)
         
+    state_space = {"x1": {"low": -parameters["max_x1"], "high": parameters["max_x1"]},
+                    "x2": {"low": -parameters["max_x2"], "high": parameters["max_x2"]},}
     #######################
     # Arguments:
     #######################
     args["gamma"] = 0.95
-    args["num_epochs"] = num_epochs
-    args["frames_per_batch"] = frames_per_batch
-    args["sub_batch_size"] = sub_batch_size
-    args["max_grad_norm"] = max_grad_norm
-    args["total_frames"] = total_frames
+    args["num_epochs"] = 10 # optimization steps per batch of data collected
+    args["frames_per_batch"] = int(2**12)
+    args["sub_batch_size"] = int(2**8)
+    args["max_grad_norm"] = 1.0
+    args["total_frames"] = int(2**14)
     args["device"] = device
     args["clip_epsilon"] = 0.2
-    args["lmbda"] = 0.95
+    args["lmbda1"] = 0.1
+    args["lmbda2"] = 0.95
     args["critic_coef"] = 1.0
-    args["loss_critic_type"] = loss_critic_type
-    args["optim_kwargs"] = {"lr": lr}
+    args["loss_critic_type"] = "smooth_l1"
+    args["optim_kwargs"] = {"lr": 5e-5}
     args["bellman_eval_res"] = 10
     args["state_space"] = state_space
     # P(i) = p_i^alpha / sum(p_i^alpha)
@@ -129,19 +116,13 @@ if __name__ == "__main__":
     args["beta"] = 1.0
     args["primary_reward_key"] = "r1"
     args["secondary_reward_key"] = "r2"
-    args["CBF_critic_coef"] = 1.0
     args["entropy_coef"] = 0.001
-    args["secondary_critic_coef"] = 1.0
-    args["safety_objective_coef"] = 1.0
-    args["secondary_objective_coef"] = 0.375
-    args["num_parallel_env"] = int(frames_per_batch / (max_rollout_len))
+    args["num_parallel_env"] = int(args["frames_per_batch"] / (args["max_rollout_len"]))
     # Gradient scaling (for HiPPO)
-    target_gradient_ratio = 0.2
+    target_gradient_ratio = 1.0 # ||opt_grad||/||safety_grad||
     args["debug"] = False
-    args["gradient_normalization"] = "lowpass"
-    args["gradient_normalization_kwargs"] = {"alpha": 0.001, 
-                                             "initial_value": target_gradient_ratio,
-                                             "offset": target_gradient_ratio}
+    args["gradient_normalization"] = "mean"
+    args["gradient_normalization_kwargs"] = {"offset": target_gradient_ratio}
 
     #######################
     # Environment:
@@ -149,36 +130,31 @@ if __name__ == "__main__":
     base_env = MultiObjectiveDoubleIntegratorEnv(batch_size=args.get("num_parallel_env"),
                                                  device=device,
                                                  td_params=parameters)
-    if isinstance(base_env, MultiObjectiveDoubleIntegratorEnv):
-        obs_signals = ["x1", "x2","y1_ref","y2_ref"]
-    elif isinstance(base_env, SafeDoubleIntegratorEnv):
-        obs_signals = ["x1","x2"]
-    else:
-        raise ValueError("Unknown environment type")
+    obs_signals = ["x1","x2"]
+    ref_signals = ["y1_ref","y2_ref"]
     transforms = [
-            UnsqueezeTransform(in_keys=obs_signals, dim=-1,in_keys_inv=obs_signals),
-            CatTensors(in_keys =obs_signals, out_key= "obs",del_keys=False,dim=-1),
+            UnsqueezeTransform(in_keys=obs_signals+ref_signals, 
+                               dim=-1,
+                               in_keys_inv=obs_signals+ref_signals,),
+            CatTensors(in_keys=obs_signals, out_key= "obs",del_keys=False,dim=-1),
+            CatTensors(in_keys=ref_signals, out_key= "ref",del_keys=False,dim=-1),
             ObservationNorm(in_keys=["obs"], out_keys=["obs"]),
+            ObservationNorm(in_keys=["ref"], out_keys=["ref"]),
+            CatTensors(in_keys=["obs","ref"], out_key="obs_extended",del_keys=False,dim=-1),
             DoubleToFloat(),
-            StepCounter(max_steps=max_rollout_len)]
+            StepCounter(max_steps=args["max_rollout_len"])]
     env = TransformedEnv(
         base_env,
         Compose(
             *transforms
         )
     ).to(device)
-    env.transform[2].init_stats(num_iter=1000,reduce_dim=(0,1),cat_dim=1)
+    env.transform[3].init_stats(num_iter=1000,reduce_dim=(0,1),cat_dim=1)
+    env.transform[4].init_stats(num_iter=1000,reduce_dim=(0,1),cat_dim=1)
     
     #######################
     # Models:
     #######################
-
-    # Handle both batch-locked and unbatched action specs
-    action_high = (env.action_spec_unbatched.high if hasattr(env, "action_spec_unbatched") 
-                                                    else env.action_spec.high)
-    action_low = (env.action_spec_unbatched.low if hasattr(env, "action_spec_unbatched") 
-                                                    else env.action_spec.low)
-    observation_size_unbatched = len(obs_signals)
 
 
     nn_net_config = {
@@ -191,7 +167,7 @@ if __name__ == "__main__":
         "bounded": True,
     }
     actor_net = nn.Sequential()
-    layers = [observation_size_unbatched] + nn_net_config["layers"] 
+    layers = [len(ref_signals+obs_signals)] + nn_net_config["layers"] 
     for i in range(len(layers)-1):
         actor_net.add_module(f"layer_{i}", nn.Linear(layers[i], layers[i + 1],device=device))
         actor_net.add_module(f"activation_{i}", nn_net_config["activation"])
@@ -201,14 +177,14 @@ if __name__ == "__main__":
 
     policy_module = ProbabilisticActor(
         module=TensorDictModule(actor_net,
-                                in_keys=["obs"],
+                                in_keys=["obs_extended"],
                                 out_keys=["loc", "scale"]),
         in_keys=["loc", "scale"],
         spec=env.action_spec,
         distribution_class=TanhNormal,
         distribution_kwargs={
-            "low": action_low,
-            "high": action_high,
+            "low": -parameters["max_input"],
+            "high": parameters["max_input"],
         },
         return_log_prob=True,
     )
@@ -227,14 +203,14 @@ if __name__ == "__main__":
         print("CBF network loaded") 
 
     value_net = nn.Sequential()
-    layers = [observation_size_unbatched] + nn_net_config["layers"]
+    layers = [len(ref_signals+obs_signals)] + nn_net_config["layers"]
     for i in range(len(layers)-1):
         value_net.add_module(f"layer_{i}", nn.Linear(layers[i], layers[i + 1],device=device))
         value_net.add_module(f"activation_{i}", nn_net_config["activation"])
     value_net.add_module("output", nn.Linear(layers[-1], 1,device=device))
     value_module = ValueOperator(
         module=value_net,
-        in_keys=["obs"],
+        in_keys=["obs_extended"],
         out_keys=["V2"]
     )
     if args.get("load_value") is not None:
@@ -245,11 +221,11 @@ if __name__ == "__main__":
     #######################
     # Training:
     #######################
-    ppo_entity = PPO()
+    ppo_entity = HiPPO()
     ppo_entity.setup(args)
     evaluator = PolicyEvaluator(env=env,
                                 policy_module=policy_module,
-                                rollout_len=max_rollout_len,
+                                rollout_len=args["max_rollout_len"],
                                 keys_to_log=[args.get("primary_reward_key"),
                                              args.get("secondary_reward_key"),
                                              "step_count"])
@@ -278,29 +254,30 @@ if __name__ == "__main__":
         collector = SyncDataCollector(
             create_env_fn=env,
             policy=policy_module,
-            frames_per_batch=frames_per_batch,
-            total_frames=total_frames,
+            frames_per_batch=args["frames_per_batch"],
+            total_frames=args["total_frames"],
             split_trajs=False,
             device=device,
             exploration_type=ExplorationType.RANDOM)
 
         replay_buffer = TensorDictReplayBuffer(
-            storage=LazyTensorStorage(max_size=frames_per_batch),
-            sampler=PrioritizedSampler(max_capacity=frames_per_batch,
+            storage=LazyTensorStorage(max_size=args["frames_per_batch"]),
+            sampler=PrioritizedSampler(max_capacity=args["frames_per_batch"],
                                         alpha=args.get("alpha",0.6),
                                         beta=args.get("beta",0.4)),
         )
         # replay_buffer = TensorDictReplayBuffer(
-        #     storage=LazyTensorStorage(max_size=frames_per_batch),
+        #     storage=LazyTensorStorage(max_size=args["frames_per_batch"]),
         #     sampler=SamplerWithoutReplacement(),
         # )
         optim = torch.optim.Adam
         # scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-        #     optim, total_frames // frames_per_batch, 1e-8
+        #     optim, args["total_frames"] // args["frames_per_batch"], 1e-8
         # )
         ppo_entity.train(
             policy_module=policy_module,
-            value_module= CBF_module,
+            V_primary=CBF_module,
+            V_secondary=value_module,
             optim=optim,
             collector=collector,
             replay_buffer=replay_buffer,
@@ -335,8 +312,9 @@ if __name__ == "__main__":
     if args.get("plot_traj") > 0:
         plot_integrator_trajectories(env, 
                                     policy_module,
-                                    max_rollout_len,
-                                    args.get("plot_traj"))
+                                    args["max_rollout_len"],
+                                    args.get("plot_traj"),
+                                    CBF_net)
         print("Plotted trajectories")
     if args.get("plot_bellman_violation"):
         print("Calculating and plotting Bellman violation")
@@ -356,5 +334,10 @@ if __name__ == "__main__":
         plt.title("Bellman violation")
         plt.xlabel("x1")
         plt.ylabel("x2")
-        plt.savefig("results/ppo_safe_integrator_bellman_violation" +\
-            datetime.now().strftime("%Y%m%d-%H%M%S") + ".pdf")
+        if wandb.run is not None:
+            wandb.log({"bellman_violation": wandb.Image(plt)})
+        else:
+            plt.savefig("results/ppo_safe_integrator_bellman_violation" +\
+                datetime.now().strftime("%Y%m%d-%H%M%S") + ".pdf")
+    if wandb.run is not None:
+        wandb.finish()
