@@ -157,7 +157,7 @@ class SafeDoubleIntegratorEnv(EnvBase):
         x2_new = x2 + u*dt
 
         # Done
-        terminated = costs > 0
+        terminated = torch.zeros_like(x1,dtype=torch.bool)
         done = terminated.clone()
         # Reward
         reward = -costs.view(*tensordict.shape,1)
@@ -261,8 +261,12 @@ def plot_integrator_trajectories(env: EnvBase,
             traj_length = torch.where(rollouts["next","done"][k])[0][0] + 1
             traj_x = rollouts["x1"][k].cpu().detach().numpy()[0:traj_length]
             traj_y = rollouts["x2"][k].cpu().detach().numpy()[0:traj_length]
+            ref_x = rollouts["y1_ref"][k].cpu().detach().numpy()[0:traj_length]
+            ref_y = rollouts["y2_ref"][k].cpu().detach().numpy()[0:traj_length]
             plt.plot(traj_x, traj_y)
             plt.plot(traj_x[0], traj_y[0], 'og')
+            plt.plot(ref_x, ref_y, 'r--')
+            plt.plot(ref_x[0], ref_y[0], 'or')
             if traj_length < rollout_len-1:
                 plt.plot(traj_x[-1], traj_y[-1], 'xr')
     plt.plot([-max_x1, -max_x1], [-max_x2, max_x2], "r")
@@ -394,12 +398,21 @@ class MultiObjectiveDoubleIntegratorEnv(SafeDoubleIntegratorEnv):
         Y = torch.stack(
             [tensordict["y1_ref"], tensordict["y2_ref"]], dim=0
         )
-        r2 = -torch.linalg.vector_norm(X-Y, ord=2,dim=0)
+        dist = torch.linalg.vector_norm(X - Y, ord=2, dim=0)
+        
+        r2 = -dist
+        # r2 = -torch.abs(tensordict["x1"] - tensordict["y1_ref"])
         out = super()._step(tensordict)
         r1 = out["reward"].clone()
         r2 = r2.view_as(r1).to(torch.float32)
+        # Only step reference signal if the distance is small enough
+        # Allows system to catch up to the reference signal
+        # n_new = torch.where(
+        #     dist < 0.1,
+        #     tensordict["reference_index"].squeeze() + 1,
+        #     tensordict["reference_index"].squeeze()
+        # )
         n_new = tensordict["reference_index"].squeeze() + 1
-
         params = self.params
         A = params["reference_amplitude"]
         f = params["reference_frequency"]
@@ -419,14 +432,29 @@ class MultiObjectiveDoubleIntegratorEnv(SafeDoubleIntegratorEnv):
     def _reset(self,tensordict:TensorDict):
         td = super()._reset(tensordict)
         x1 = td["x1"]
+        x2 = td["x2"]
         params = self.params
         A = params["reference_amplitude"]
         f = params["reference_frequency"]
         dt = params["dt"]
-        # Start reference signal from the current position
-        # Could also force the velocity to be correct to begin with, but seems like helping
-        # out too much
-        n = (torch.arcsin(x1)/(2*torch.pi*f*dt)).to(torch.int32)
+        # Start reference signal from position closest to the current x1
+        y1_0 = torch.where(
+            torch.abs(x1) < A,
+            x1,
+            A
+        )
+        n = (torch.arcsin(y1_0/A)/(2*torch.pi*f*dt)).to(torch.int32)
+        # select starting point so that x2(0) is also as close as possible to the reference signal
+        # subject to y1_o given
+        n = torch.where(
+            x2 < 0.0,
+            (1/(2*f*dt) -n).to(torch.int32),
+            n
+        )
+        # Note that arcsin gives values in the range [-pi/2, pi/2]
+        # and that cos(x) is always positive in this range
+        # Which means that if x2 is negative, we should select the symmetric time point
+        # pi - t where sin(pi - t) = sin(t), but cos(pi - t) = -cos(t)
         y1_ref = A*torch.sin(2*torch.pi*f*dt*n)
         y2_ref = A*2*torch.pi*f*torch.cos(2*torch.pi*f*dt*n)
         new_vals = TensorDict({

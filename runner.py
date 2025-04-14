@@ -70,7 +70,6 @@ if __name__ == "__main__":
     #######################
     # Hyperparameters:
     #######################
-    num_cells = 64
     max_input = 1.0
     max_x1 = 1.0
     max_x2 = 1.0
@@ -80,14 +79,8 @@ if __name__ == "__main__":
     max_grad_norm = 1.0
     total_frames = int(2**20)
     num_epochs = 10  # optimization steps per batch of data collected
-    clip_epsilon = (
-        0.2  # clip value for PPO loss: see the equation in the intro for more context.
-    )
-    critic_coef = 1.0
     loss_critic_type = "smooth_l1"
     sub_batch_size = int(2**8)
-    lmbda = 0.95
-    entropy_eps = 0.0
         
     #######################
     # Parallelization:
@@ -108,8 +101,8 @@ if __name__ == "__main__":
             "max_x1": max_x1,
             "max_x2": max_x2,
             "max_input": max_input,
-            "reference_amplitude": 1.1,
-            "reference_frequency": 0.05,
+            "reference_amplitude": 1.0,
+            "reference_frequency": 0.1, # rule of thumb: < max_u/(2*pi*sqrt(A))
         },[],device=device)
         
     #######################
@@ -121,11 +114,10 @@ if __name__ == "__main__":
     args["sub_batch_size"] = sub_batch_size
     args["max_grad_norm"] = max_grad_norm
     args["total_frames"] = total_frames
-    args["entropy_eps"] = entropy_eps
     args["device"] = device
-    args["clip_epsilon"] = clip_epsilon
-    args["lmbda"] = lmbda
-    args["critic_coef"] = critic_coef
+    args["clip_epsilon"] = 0.2
+    args["lmbda"] = 0.95
+    args["critic_coef"] = 1.0
     args["loss_critic_type"] = loss_critic_type
     args["optim_kwargs"] = {"lr": lr}
     args["bellman_eval_res"] = 10
@@ -137,6 +129,7 @@ if __name__ == "__main__":
     args["primary_reward_key"] = "r2"
     args["secondary_reward_key"] = "r2"
     args["CBF_critic_coef"] = 1.0
+    args["entropy_coef"] = 0.001
     args["secondary_critic_coef"] = 1.0
     args["safety_objective_coef"] = 1.0
     args["secondary_objective_coef"] = 0.375
