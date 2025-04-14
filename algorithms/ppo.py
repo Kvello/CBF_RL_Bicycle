@@ -172,8 +172,6 @@ class PPO(RLAlgoBase):
                     {lr_str}, \
                     {eval_str}"
                 )
-        if wandb.run is not None:
-            wandb.finish() 
         collector.shutdown()
 
     def step(self, 
