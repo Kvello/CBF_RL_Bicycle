@@ -261,8 +261,12 @@ def plot_integrator_trajectories(env: EnvBase,
             traj_length = torch.where(rollouts["next","done"][k])[0][0] + 1
             traj_x = rollouts["x1"][k].cpu().detach().numpy()[0:traj_length]
             traj_y = rollouts["x2"][k].cpu().detach().numpy()[0:traj_length]
+            ref_x = rollouts["y1_ref"][k].cpu().detach().numpy()[0:traj_length]
+            ref_y = rollouts["y2_ref"][k].cpu().detach().numpy()[0:traj_length]
             plt.plot(traj_x, traj_y)
             plt.plot(traj_x[0], traj_y[0], 'og')
+            plt.plot(ref_x, ref_y, 'r--')
+            plt.plot(ref_x[0], ref_y[0], 'or')
             if traj_length < rollout_len-1:
                 plt.plot(traj_x[-1], traj_y[-1], 'xr')
     plt.plot([-max_x1, -max_x1], [-max_x2, max_x2], "r")
@@ -409,7 +413,6 @@ class MultiObjectiveDoubleIntegratorEnv(SafeDoubleIntegratorEnv):
         #     tensordict["reference_index"].squeeze()
         # )
         n_new = tensordict["reference_index"].squeeze() + 1
-
         params = self.params
         A = params["reference_amplitude"]
         f = params["reference_frequency"]
@@ -434,9 +437,15 @@ class MultiObjectiveDoubleIntegratorEnv(SafeDoubleIntegratorEnv):
         A = params["reference_amplitude"]
         f = params["reference_frequency"]
         dt = params["dt"]
-        # Start reference signal from the current x1-position
-        n = (torch.arcsin(x1/A)/(2*torch.pi*f*dt)).to(torch.int32)
+        # Start reference signal from position closest to the current x1
+        y1_0 = torch.where(
+            torch.abs(x1) < A,
+            x1,
+            A
+        )
+        n = (torch.arcsin(y1_0/A)/(2*torch.pi*f*dt)).to(torch.int32)
         # select starting point so that x2(0) is also as close as possible to the reference signal
+        # subject to y1_o given
         n = torch.where(
             x2 < 0.0,
             (1/(2*f*dt) -n).to(torch.int32),
