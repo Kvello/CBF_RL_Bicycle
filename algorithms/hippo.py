@@ -69,32 +69,43 @@ def gradient_projection(
             [p.grad.view(-1) for p in common_module.parameters()]
         )
         common_module.zero_grad()
-        if torch.isclose(grad_vec_primary_loss.norm(),torch.tensor(0.0),atol=1e-30):
+        if torch.isclose(grad_vec_primary_loss.norm(),torch.tensor(0.0),atol=1e-10):
             # If primary loss gradient is zero, return secondary loss gradient
             # This is an edge case, and should not happen in practice
             return grad_vec_secondary_loss
-        # Projection of secondary objective loss gradient onto nullspace of
-        # primary objective loss gradient
-        secondary_proj =(
-            torch.dot(grad_vec_secondary_loss, grad_vec_primary_loss)
-            / torch.dot(grad_vec_primary_loss, grad_vec_primary_loss)
-            * grad_vec_primary_loss
-        )
-        secondary_proj = grad_vec_secondary_loss - secondary_proj 
-        relative_length = gradient_scaler(secondary_proj.norm() / grad_vec_primary_loss.norm())
+        if torch.dot(grad_vec_secondary_loss,grad_vec_primary_loss) < 0.0:
+            # Projection of secondary objective loss gradient onto nullspace of
+            # primary objective loss gradient
+            secondary_proj =(
+                torch.dot(grad_vec_secondary_loss, grad_vec_primary_loss)
+                / torch.dot(grad_vec_primary_loss, grad_vec_primary_loss)
+                * grad_vec_primary_loss
+            )
+            secondary_proj = grad_vec_secondary_loss - secondary_proj 
+        else:
+            secondary_proj = grad_vec_secondary_loss
+        rl_k = secondary_proj.norm() / grad_vec_primary_loss.norm()
+        if torch.isnan(rl_k).any() or torch.isinf(rl_k).any():
+            print("rl_k is NaN or Inf")
+            print("primary_loss:",primary_loss)
+            print("secondary_loss:",secondary_loss)
+            rl_k = torch.tensor(0.0)
+            return torch.zeros_like(grad_vec_primary_loss)
+        relative_length = gradient_scaler(rl_k)
         # Make sure gradient_scaler is ran in the case of a zero secondary loss gradient,
         # as this still is a valid case for the gradient scaler, and should be reported to the
         # gradient scaler if it is statefull(e.g a filter).
         if wandb.run is not None and debug:
             wandb.log({"relative gradient length":relative_length})
             wandb.log({"Estimated mean:": gradient_scaler.mean})
-        if torch.isclose(secondary_proj.norm(),torch.tensor(0.0),atol=1e-30):
+        if torch.isclose(secondary_proj.norm(),torch.tensor(0.0),atol=1e-10):
             # If secondary loss gradient is zero, ignore the projection
             # and return the primary loss gradient
             return grad_vec_primary_loss 
         secondary_proj = secondary_proj/secondary_proj.norm()
         grad = (
-            secondary_proj*relative_length + grad_vec_primary_loss
+            secondary_proj*grad_vec_primary_loss.norm()*relative_length 
+            + grad_vec_primary_loss
         )
         return grad
 
@@ -115,8 +126,11 @@ class HierarchicalPPO(PPO):
         warn_str = "clip_epsilon not found in config, using default value of 0.2"
         self.clip_epsilon = get_config_value(config, "clip_epsilon", 0.2, warn_str)
         
-        warn_str = "lmbda not found in config, using default value of 0.95"
-        self.lmbda = get_config_value(config, "lmbda", 0.95, warn_str)
+        warn_str = "lmbda1 not found in config, using default value of 0.95"
+        self.lmbda1 = get_config_value(config, "lmbda1", 0.95, warn_str)
+
+        warn_str = "lmbda2 not found in config, using default value of 0.95"
+        self.lmbda2 = get_config_value(config, "lmbda2", 0.95, warn_str)
 
         warn_str = "critic_coef not found in config, using default value of 1.0"
         self.critic_coef = get_config_value(config, "critic_coef", 1.0, warn_str)
@@ -132,6 +146,9 @@ class HierarchicalPPO(PPO):
         
         warn_str = "secondary_reward_key not found in config, using default value of 'r2'"
         self.secondary_reward_key = get_config_value(config, "secondary_reward_key", "r2", warn_str)
+
+        warn_str = "entropy_coef not found in config, using default value of 0.0"
+        self.entropy_coef = get_config_value(config, "entropy_coef", 0.0, warn_str)
 
         self.loss_value_log_keys = {
             "loss_safety_objective",
@@ -208,11 +225,13 @@ class HierarchicalPPO(PPO):
             secondary_critic=V_secondary,
             clip_epsilon=self.clip_epsilon,
             critic_coef=self.critic_coef,
+            entropy_coef=self.entropy_coef,
             gamma=self.gamma,
         )
         self.advantage_module = MultiGAE(
             gamma=self.gamma,
-            lmdba=self.lmbda,
+            lmbda1=self.lmbda1,
+            lmbda2=self.lmbda2,
             V_primary=V_primary,
             V_secondary=V_secondary,
             device=self.device,
@@ -256,8 +275,6 @@ class HierarchicalPPO(PPO):
                     {lr_str}, \
                     {eval_str}"
                 )
-        if wandb.run is not None:
-            wandb.finish() 
         collector.shutdown()
 
     def _set_gradients(self,
@@ -279,9 +296,15 @@ class HierarchicalPPO(PPO):
             loss_vals["loss_CBF"] + loss_vals["loss_secondary_critic"]
         )
         critic_loss.backward()
+        safety_loss = (
+            loss_vals["loss_safety_objective"] + loss_vals["loss_safety_entropy"]
+        )
+        secondary_loss = (
+            loss_vals["loss_secondary_objective"] + loss_vals["loss_secondary_entropy"]
+        )
         policy_grad = gradient_projection(loss_module.actor_network, 
-                            loss_vals["loss_safety_objective"], 
-                            loss_vals["loss_secondary_objective"],
+                            safety_loss, 
+                            secondary_loss,
                             self.gradient_normalization,
                             debug=self.debug)
                 # Set gradient to the policy module
@@ -293,6 +316,6 @@ class HierarchicalPPO(PPO):
             last_param_idx += p.data.numel()
         # this is not strictly mandatory but it's good practice to keep
         # your gradient norm bounded
-        # torch.nn.utils.clip_grad_norm_(loss_module.parameters(), 
-        #                                self.max_grad_norm)
+        torch.nn.utils.clip_grad_norm_(loss_module.parameters(), 
+                                       self.max_grad_norm)
         return loss_vals
