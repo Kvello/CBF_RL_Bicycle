@@ -40,22 +40,25 @@ class SafeDoubleIntegratorEnv(EnvBase):
         The input constraints are u in [-max_input, max_input]
     """
     rng = None
-    batch_locked = False
-    def __init__(self, td_params=None, seed=None, device=None):
+    batch_locked = True
+    def __init__(self,
+                 batch_size:Union[int,None]=None, 
+                 td_params=None, 
+                 seed=None, 
+                 device=None):
         self.device = device
+        if batch_size is None:
+            self.batch_size = []
+        else:
+            self.batch_size = [batch_size]
         if td_params is None:
             # Default parameters
             td_params = TensorDict({
-            "params": TensorDict({
                 "dt": 0.01,
                 "max_input": 1.0,
                 "max_x1": 1.0,
                 "max_x2": 1.0,
-                    },[],
-                )
-            },
-            [],device=device,
-            )
+                    },[],device=device)
         self._params = td_params
         super().__init__(device=self.device)
         self._make_spec(td_params)
@@ -67,23 +70,9 @@ class SafeDoubleIntegratorEnv(EnvBase):
         rng = torch.Generator(device=self.device)
         rng.manual_seed(seed)
         self.rng = rng
-    def gen_params(self,batch_size:Optional[List[int]]=None, device=None)->TensorDictBase:
-        """Returns a TensorDict with the parameters of the environment
-
-        Args:
-            batch_size (int, optional): batch size. Defaults to None.
-            device (string, optional): device to use. Defaults to None.
-
-        Returns:
-            TensorDictBase: TensorDict with keys 'dt'
-        """
-        if batch_size is None:
-            batch_size = []
-        td = self._params.clone()
-        td.to(device)
-        if batch_size:
-            td = td.expand(batch_size).contiguous()
-        return td
+    @property
+    def params(self):
+        return self._params
     def _make_spec(self, td_params:TensorDictBase):
         """Creates the tensor specs for the environment
 
@@ -92,19 +81,18 @@ class SafeDoubleIntegratorEnv(EnvBase):
         """
         self.observation_spec = CompositeSpec(
             x1 = UnboundedContinuousTensorSpec(
-                shape=(),
+                shape=self.batch_size,
                 dtype=torch.float32),
             x2 = UnboundedContinuousTensorSpec(
-                shape=(),
+                shape=self.batch_size,
                 dtype=torch.float32),
-            params = self.make_composite_from_td(td_params["params"]),
-            shape=(),
+            shape=self.batch_size,
         )
         self.state_spec = self.observation_spec.clone()
         self.action_spec = BoundedTensorSpec(
-            low=-td_params["params", "max_input"],
-            high=td_params["params", "max_input"],
-            shape=(1,),
+            low=-td_params["max_input"],
+            high=td_params["max_input"],
+            shape=(*self.batch_size,1),
             dtype=torch.float32
         )
 #        self.done_spec = CompositeSpec(
@@ -120,7 +108,7 @@ class SafeDoubleIntegratorEnv(EnvBase):
         self.reward_spec = BoundedTensorSpec(
             low=-1.0,
             high=0.0,
-            shape=(*td_params.shape,1),
+            shape=(*self.batch_size,1),
             dtype=torch.float32
         )
     def make_composite_from_td(self,td:TensorDict):
@@ -138,8 +126,7 @@ class SafeDoubleIntegratorEnv(EnvBase):
             shape=td.shape
         )
         return composite
-    @classmethod
-    def _step(cls, tensordict: TensorDict):
+    def _step(self, tensordict: TensorDict):
         """
         Args:
             tensordict (TensorDict): dict with keys 'x1','x2' and 'action'
@@ -155,7 +142,7 @@ class SafeDoubleIntegratorEnv(EnvBase):
         # That means that when an action makes the next state unsafe, this will
         # only be detected in the next step, and we won't set termiated to True immeadiately
         # This is a design choice, and can be changed if needed
-        params = tensordict["params"]
+        params = self._params
         costs = torch.zeros_like(x1)
         costs = torch.where(
             SafeDoubleIntegratorEnv.constraints_satisfied(params,x1, x2), 
@@ -170,7 +157,7 @@ class SafeDoubleIntegratorEnv(EnvBase):
         x2_new = x2 + u*dt
 
         # Done
-        terminated = costs > 0
+        terminated = torch.zeros_like(x1,dtype=torch.bool)
         done = terminated.clone()
         # Reward
         reward = -costs.view(*tensordict.shape,1)
@@ -178,7 +165,6 @@ class SafeDoubleIntegratorEnv(EnvBase):
         out = TensorDict({
             "x1": x1_new,
             "x2": x2_new,
-            "params": tensordict["params"],
             "reward": reward,
             "done": done,
             "terminated": terminated,
@@ -186,30 +172,25 @@ class SafeDoubleIntegratorEnv(EnvBase):
         tensordict.shape)
         return out
     def _reset(self,tensordict):
-        batch_size = (
-            tensordict.batch_size if tensordict is not None else self.batch_size
-        )
-        if tensordict is None or tensordict.is_empty():
-            tensordict = self.gen_params(batch_size = batch_size)
+        params = self._params
         x1 = (
-            torch.rand(tensordict.shape,generator=self.rng,device=self.device,dtype=torch.float32)
-            *(2*tensordict["params","max_x1"])
-            - tensordict["params","max_x1"]
+            torch.rand(self.batch_size,generator=self.rng,device=self.device,dtype=torch.float32)
+            *(2*params["max_x1"])
+            - params["max_x1"]
         )
         x2 = (
-            torch.rand(tensordict.shape,generator=self.rng,device=self.device,dtype=torch.float32)
-            *(2*tensordict["params","max_x2"])
-            - tensordict["params","max_x2"]
+            torch.rand(self.batch_size,generator=self.rng,device=self.device,dtype=torch.float32)
+            *(2*params["max_x2"])
+            - params["max_x2"]
         )
-        terminated= torch.zeros(batch_size,dtype=torch.bool,device=self.device)
+        terminated= torch.zeros(self.batch_size,dtype=torch.bool,device=self.device)
         done = terminated.clone()
         out = TensorDict(
             {
             "x1": x1,
             "x2": x2,
-            "params": tensordict["params"],
             },
-        batch_size=batch_size)
+        batch_size=self.batch_size)
         return out
     @staticmethod
     def constraints_satisfied(params:TensorDict, 
@@ -264,8 +245,9 @@ def plot_integrator_trajectories(env: EnvBase,
 
     fig = plt.figure()
     i=0
-    max_x1 = env.gen_params()["params","max_x1"]
-    max_x2 = env.gen_params()["params","max_x2"]
+    params = env.params
+    max_x1 = params["max_x1"]
+    max_x2 = params["max_x2"]
     print(f"Generating {num_trajectories} trajectories")
     while i < num_trajectories:
         rollouts =  env.rollout(rollout_len, 
@@ -279,8 +261,12 @@ def plot_integrator_trajectories(env: EnvBase,
             traj_length = torch.where(rollouts["next","done"][k])[0][0] + 1
             traj_x = rollouts["x1"][k].cpu().detach().numpy()[0:traj_length]
             traj_y = rollouts["x2"][k].cpu().detach().numpy()[0:traj_length]
+            ref_x = rollouts["y1_ref"][k].cpu().detach().numpy()[0:traj_length]
+            ref_y = rollouts["y2_ref"][k].cpu().detach().numpy()[0:traj_length]
             plt.plot(traj_x, traj_y)
             plt.plot(traj_x[0], traj_y[0], 'og')
+            plt.plot(ref_x, ref_y, 'r--')
+            plt.plot(ref_x[0], ref_y[0], 'or')
             if traj_length < rollout_len-1:
                 plt.plot(traj_x[-1], traj_y[-1], 'xr')
     plt.plot([-max_x1, -max_x1], [-max_x2, max_x2], "r")
@@ -379,30 +365,106 @@ class MultiObjectiveDoubleIntegratorEnv(SafeDoubleIntegratorEnv):
     primary_reward_key:str = "r1"
     secondary_reward_key:str = "r2"
     def __init__(self, 
+                 batch_size:Union[int,None]=None,
                  td_params=None, 
                  seed=None, 
                  device=None):
-        super().__init__(td_params=td_params, seed=seed, device=device)
-    @classmethod
+        batch_locked = True
+        if td_params is None:
+            # Default parameters
+            td_params = TensorDict({
+                "dt": 0.01,
+                "max_input": 1.0,
+                "max_x1": 1.0,
+                "max_x2": 1.0,
+                "reference_amplitude": 1.1,
+                "reference_frequency": 0.05, # Hz(must be smaller than 0.5*1/dt),
+                # and should be small enough so that the system can likely track it with
+                # subject to the input constraints
+                    },[],device=device)
+        super().__init__(batch_size=batch_size, 
+                         td_params=td_params, 
+                         seed=seed, 
+                         device=device)
     # For some reason creating the secondary reward function as a modifiable class attribute 
     # does not work with the multisync collector. Instead, the collecor uses the default function
     # regardless of modifications to the class attribute. Therefore, the function is
     # defined as a static method and called from the step method.
-    @staticmethod
-    def _secondary_reward_func(x1:torch.Tensor, x2:torch.Tensor)->torch.Tensor:
-        return x1*x2
-    @classmethod
-    def _step(cls, tensordict: TensorDict)->TensorDict:
-        r2 = torch.as_tensor(cls._secondary_reward_func(tensordict["x1"],tensordict["x2"]))
+    def _step(self, tensordict: TensorDict)->TensorDict:
+        # 1-norm, 2-norm, or something else? Max-norm?
+        X = torch.stack(
+            [tensordict["x1"], tensordict["x2"]], dim=0
+        )
+        Y = torch.stack(
+            [tensordict["y1_ref"], tensordict["y2_ref"]], dim=0
+        )
+        dist = torch.linalg.vector_norm(X - Y, ord=2, dim=0)
+        
+        r2 = -dist
+        # r2 = -torch.abs(tensordict["x1"] - tensordict["y1_ref"])
         out = super()._step(tensordict)
         r1 = out["reward"].clone()
         r2 = r2.view_as(r1).to(torch.float32)
+        # Only step reference signal if the distance is small enough
+        # Allows system to catch up to the reference signal
+        # n_new = torch.where(
+        #     dist < 0.1,
+        #     tensordict["reference_index"].squeeze() + 1,
+        #     tensordict["reference_index"].squeeze()
+        # )
+        n_new = tensordict["reference_index"].squeeze() + 1
+        params = self.params
+        A = params["reference_amplitude"]
+        f = params["reference_frequency"]
+        dt = params["dt"]
+        y1_ref_new = A*torch.sin(2*torch.pi*f*n_new*dt)
+        y2_ref_new = A*2*torch.pi*f*torch.cos(2*torch.pi*f*n_new*dt)
+
         new_vals = TensorDict({
-            cls.primary_reward_key: r1,
-            cls.secondary_reward_key: r2,
+            MultiObjectiveDoubleIntegratorEnv.primary_reward_key: r1,
+            MultiObjectiveDoubleIntegratorEnv.secondary_reward_key: r2,
+            "reference_index": n_new,
+            "y1_ref": y1_ref_new,
+            "y2_ref": y2_ref_new,
         },out.batch_size)
         out.update(new_vals)
         return out
+    def _reset(self,tensordict:TensorDict):
+        td = super()._reset(tensordict)
+        x1 = td["x1"]
+        x2 = td["x2"]
+        params = self.params
+        A = params["reference_amplitude"]
+        f = params["reference_frequency"]
+        dt = params["dt"]
+        # Start reference signal from position closest to the current x1
+        y1_0 = torch.where(
+            torch.abs(x1) < A,
+            x1,
+            A
+        )
+        n = (torch.arcsin(y1_0/A)/(2*torch.pi*f*dt)).to(torch.int32)
+        # select starting point so that x2(0) is also as close as possible to the reference signal
+        # subject to y1_o given
+        n = torch.where(
+            x2 < 0.0,
+            (1/(2*f*dt) -n).to(torch.int32),
+            n
+        )
+        # Note that arcsin gives values in the range [-pi/2, pi/2]
+        # and that cos(x) is always positive in this range
+        # Which means that if x2 is negative, we should select the symmetric time point
+        # pi - t where sin(pi - t) = sin(t), but cos(pi - t) = -cos(t)
+        y1_ref = A*torch.sin(2*torch.pi*f*dt*n)
+        y2_ref = A*2*torch.pi*f*torch.cos(2*torch.pi*f*dt*n)
+        new_vals = TensorDict({
+            "reference_index": n,
+            "y1_ref": y1_ref,
+            "y2_ref": y2_ref,
+        },td.batch_size)
+        td.update(new_vals)
+        return td
+    
     def _make_spec(self, td_params:TensorDictBase):
         super()._make_spec(td_params)
         base_reward_spec = self.reward_spec
@@ -411,9 +473,35 @@ class MultiObjectiveDoubleIntegratorEnv(SafeDoubleIntegratorEnv):
                 "reward": base_reward_spec,
                 self.primary_reward_key: base_reward_spec,
                 self.secondary_reward_key: UnboundedContinuousTensorSpec(
-                    shape=(*td_params.shape,1),
+                    shape=(*self.batch_size,1),
                     dtype=torch.float32
                 )
             },
-            shape=td_params.shape,
+            shape=self.batch_size,
+        )
+        self.observation_spec = CompositeSpec(
+            x1 = UnboundedContinuousTensorSpec(
+                shape=self.batch_size,
+                dtype=torch.float32),
+            x2 = UnboundedContinuousTensorSpec(
+                shape=self.batch_size,
+                dtype=torch.float32),
+            shape=self.batch_size,
+        )
+        self.observation_spec = CompositeSpec(
+                x1 = self.observation_spec["x1"],
+                x2 = self.observation_spec["x2"],
+                reference_index = UnboundedContinuousTensorSpec(
+                    shape=(*self.batch_size,),
+                    dtype=torch.int32
+                ),
+                y1_ref = UnboundedContinuousTensorSpec(
+                    shape=(*self.batch_size,),
+                    dtype=torch.float32
+                ),
+                y2_ref = UnboundedContinuousTensorSpec(
+                    shape=(*self.batch_size,),
+                    dtype=torch.float32
+                ),
+            shape=self.batch_size,
         )

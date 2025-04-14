@@ -7,7 +7,7 @@ from torch import nn
 from tensordict.nn.distributions import NormalParamExtractor
 from tensordict import TensorDict
 from torchrl.data.replay_buffers import TensorDictReplayBuffer
-from torchrl.collectors import MultiSyncDataCollector
+from torchrl.collectors import MultiSyncDataCollector, SyncDataCollector
 from torchrl.data.replay_buffers.storages import LazyTensorStorage
 from torchrl.data.replay_buffers.samplers import SamplerWithoutReplacement, PrioritizedSampler
 from torchrl.envs import (
@@ -19,7 +19,6 @@ from torchrl.envs import (
     CatTensors,
     UnsqueezeTransform,
     EnvCreator,
-    BatchSizeTransform
 )
 from torch import multiprocessing
 from torchrl.envs.utils import ExplorationType
@@ -29,7 +28,6 @@ from envs.integrator import MultiObjectiveDoubleIntegratorEnv, plot_integrator_t
 from datetime import datetime
 import argparse
 from results.evaluate import PolicyEvaluator, calculate_bellman_violation
-from utils.utils import reset_batched_env   
 from models.factory import SafetyValueFunctionFactory
 from algorithms.hippo import HierarchicalPPO as HiPPO
 from algorithms.ppo import PPO
@@ -64,7 +62,6 @@ def parse_args()->Dict[str,Any]:
                         default=False, help="Track the Bellman violation")
     parser.add_argument("--plot_bellman_violation", action="store_true",
                         default=False, help="Plot the Bellman violation of trained value function and policy")
-    
     return vars(parser.parse_args())
     
 if __name__ == "__main__":
@@ -73,7 +70,6 @@ if __name__ == "__main__":
     #######################
     # Hyperparameters:
     #######################
-    num_cells = 64
     max_input = 1.0
     max_x1 = 1.0
     max_x2 = 1.0
@@ -81,37 +77,15 @@ if __name__ == "__main__":
     frames_per_batch = int(2**12)
     lr = 5e-5
     max_grad_norm = 1.0
-    total_frames = int(2**12)
+    total_frames = int(2**20)
     num_epochs = 10  # optimization steps per batch of data collected
-    clip_epsilon = (
-        0.2  # clip value for PPO loss: see the equation in the intro for more context.
-    )
-    critic_coef = 1.0
     loss_critic_type = "smooth_l1"
-    sub_batch_size = int(2)
-    lmbda = 0.95
-    entropy_eps = 0.0
-    nn_net_config = {
-        "name": "feedforward",
-        "eps": 1e-2,
-        "layers": [64, 64],
-        "activation": nn.ReLU(),
-        "device": device,
-        "input_size": 2,
-        "bounded": True,
-    }
+    sub_batch_size = int(2**8)
         
     #######################
     # Parallelization:
     #######################
     max_rollout_len = args.get("max_rollout_len")
-    if device.type == "cuda":
-        batches_per_process = int(frames_per_batch / (max_rollout_len))
-        num_workers = 1
-    else:
-        batches_per_process = int(frames_per_batch / (max_rollout_len))
-        num_workers = 1
-
     multiprocessing.set_start_method("spawn", force=True)
     is_fork = multiprocessing.get_start_method(allow_none=True) == "fork"
     device = (
@@ -123,13 +97,12 @@ if __name__ == "__main__":
                     "x2": {"low": -max_x2, "high": max_x2}}
 
     parameters = TensorDict({
-        "params" : TensorDict({
             "dt": dt,
             "max_x1": max_x1,
             "max_x2": max_x2,
             "max_input": max_input,
-        },[],
-        device=device)
+            "reference_amplitude": 1.0,
+            "reference_frequency": 0.1, # rule of thumb: < max_u/(2*pi*sqrt(A))
         },[],device=device)
         
     #######################
@@ -141,49 +114,52 @@ if __name__ == "__main__":
     args["sub_batch_size"] = sub_batch_size
     args["max_grad_norm"] = max_grad_norm
     args["total_frames"] = total_frames
-    args["entropy_eps"] = entropy_eps
     args["device"] = device
-    args["clip_epsilon"] = clip_epsilon
-    args["lmbda"] = lmbda
-    args["critic_coef"] = critic_coef
+    args["clip_epsilon"] = 0.2
+    args["lmbda"] = 0.95
+    args["critic_coef"] = 1.0
     args["loss_critic_type"] = loss_critic_type
     args["optim_kwargs"] = {"lr": lr}
     args["bellman_eval_res"] = 10
     args["state_space"] = state_space
     # P(i) = p_i^alpha / sum(p_i^alpha)
     # w(i) = 1/(N*P(i))^beta
-    args["alpha"] = 1.0
+    args["alpha"] = 0.0
     args["beta"] = 1.0
-    args["primary_reward_key"] = "r1"
+    args["primary_reward_key"] = "r2"
     args["secondary_reward_key"] = "r2"
     args["CBF_critic_coef"] = 1.0
+    args["entropy_coef"] = 0.001
     args["secondary_critic_coef"] = 1.0
     args["safety_objective_coef"] = 1.0
     args["secondary_objective_coef"] = 0.375
-    args["batches_per_process"] = batches_per_process
+    args["num_parallel_env"] = int(frames_per_batch / (max_rollout_len))
 
     #######################
     # Environment:
     #######################
-    base_env = MultiObjectiveDoubleIntegratorEnv(device=device,
+    base_env = MultiObjectiveDoubleIntegratorEnv(batch_size=args.get("num_parallel_env"),
+                                                 device=device,
                                                  td_params=parameters)
-    after_batch_transform = [
-            UnsqueezeTransform(in_keys=["x1", "x2"], dim=-1,in_keys_inv=["x1","x2"]),
-            CatTensors(in_keys =["x1", "x2"], out_key= "obs",del_keys=False,dim=-1),
+    if isinstance(base_env, MultiObjectiveDoubleIntegratorEnv):
+        obs_signals = ["x1", "x2","y1_ref","y2_ref"]
+    elif isinstance(base_env, SafeDoubleIntegratorEnv):
+        obs_signals = ["x1","x2"]
+    else:
+        raise ValueError("Unknown environment type")
+    transforms = [
+            UnsqueezeTransform(in_keys=obs_signals, dim=-1,in_keys_inv=obs_signals),
+            CatTensors(in_keys =obs_signals, out_key= "obs",del_keys=False,dim=-1),
             ObservationNorm(in_keys=["obs"], out_keys=["obs"]),
             DoubleToFloat(),
             StepCounter(max_steps=max_rollout_len)]
     env = TransformedEnv(
         base_env,
         Compose(
-            BatchSizeTransform(batch_size=[batches_per_process],
-                               reset_func=reset_batched_env,
-                               env_kwarg=True),
-            *after_batch_transform
+            *transforms
         )
     ).to(device)
-    env.transform[3].init_stats(num_iter=1000,reduce_dim=(0,1),cat_dim=1)
-    
+    env.transform[2].init_stats(num_iter=1000,reduce_dim=(0,1),cat_dim=1)
     
     #######################
     # Models:
@@ -194,10 +170,18 @@ if __name__ == "__main__":
                                                     else env.action_spec.high)
     action_low = (env.action_spec_unbatched.low if hasattr(env, "action_spec_unbatched") 
                                                     else env.action_spec.low)
-    observation_size_unbatched = (env.obs_size_unbatched if hasattr(env, "obs_size_unbatched") 
-                                                            else env.observation_space.shape[0])
+    observation_size_unbatched = len(obs_signals)
 
 
+    nn_net_config = {
+        "name": "feedforward",
+        "eps": 1e-2,
+        "layers": [64, 64],
+        "activation": nn.ReLU(),
+        "device": device,
+        "input_size": len(obs_signals),
+        "bounded": True,
+    }
     actor_net = nn.Sequential()
     layers = [observation_size_unbatched] + nn_net_config["layers"] 
     for i in range(len(layers)-1):
@@ -253,7 +237,7 @@ if __name__ == "__main__":
     #######################
     # Training:
     #######################
-    ppo_entity = HiPPO()
+    ppo_entity = PPO()
     ppo_entity.setup(args)
     evaluator = PolicyEvaluator(env=env,
                                 policy_module=policy_module,
@@ -270,9 +254,9 @@ if __name__ == "__main__":
                 CBF_net,
                 state_space, 
                 policy_module,
-                base_env, 
+                MultiObjectiveDoubleIntegratorEnv, 
                 args.get("gamma"),
-                after_batch_transform=after_batch_transform
+                transforms=env.transform
             )
             eval_logs = evaluator.evaluate_policy()
             logs.update(eval_logs)
@@ -283,18 +267,14 @@ if __name__ == "__main__":
     else:
         eval_func = lambda x: evaluator.evaluate_policy()
     if args.get("train"):
-        env_creator = EnvCreator(lambda: env)
-        create_env_fn = [env_creator for _ in range(num_workers)]
-        collector = MultiSyncDataCollector(
-            create_env_fn=create_env_fn,
+        collector = SyncDataCollector(
+            create_env_fn=env,
             policy=policy_module,
             frames_per_batch=frames_per_batch,
             total_frames=total_frames,
             split_trajs=False,
             device=device,
-            exploration_type=ExplorationType.RANDOM,
-            update_at_each_batch=True,
-            cat_results="stack")
+            exploration_type=ExplorationType.RANDOM)
 
         replay_buffer = TensorDictReplayBuffer(
             storage=LazyTensorStorage(max_size=frames_per_batch),
@@ -312,8 +292,7 @@ if __name__ == "__main__":
         # )
         ppo_entity.train(
             policy_module=policy_module,
-            V_primary = CBF_module,
-            V_secondary = value_module,
+            value_module= CBF_module,
             optim=optim,
             collector=collector,
             replay_buffer=replay_buffer,
@@ -349,8 +328,7 @@ if __name__ == "__main__":
         plot_integrator_trajectories(env, 
                                     policy_module,
                                     max_rollout_len,
-                                    args.get("plot_traj"),
-                                    CBF_net)
+                                    args.get("plot_traj"))
         print("Plotted trajectories")
     if args.get("plot_bellman_violation"):
         print("Calculating and plotting Bellman violation")
@@ -360,9 +338,9 @@ if __name__ == "__main__":
                                             CBF_net,
                                             state_space, 
                                             policy_module,
-                                            base_env,
+                                            MultiObjectiveDoubleIntegratorEnv,
                                             args.get("gamma"),
-                                            after_batch_transform=after_batch_transform)
+                                            transforms=env.transform)
         plt.figure(figsize=(10, 10))
         # Better with contourf, or imshow or maybe surface plot or pcolormesh
         plt.contourf(bm_viol,cmap="coolwarm")
