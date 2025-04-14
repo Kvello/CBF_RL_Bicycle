@@ -22,6 +22,7 @@ from matplotlib import pyplot as plt
 from matplotlib.ticker import MaxNLocator
 from math import ceil
 from datetime import datetime
+import wandb
 
         
 class SafeDoubleIntegratorEnv(EnvBase):
@@ -297,7 +298,10 @@ def plot_integrator_trajectories(env: EnvBase,
         plt.contour(mesh[0],mesh[1],value_landscape,levels=levels,colors="black")
         plt.contourf(mesh[0],mesh[1],value_landscape,levels=levels_locator,cmap='coolwarm')
         plt.colorbar()
-    plt.savefig("results/integrator_trajectories" + datetime.now().strftime("%Y%m%d-%H%M%S") + ".pdf")
+    if wandb.run is not None:
+        wandb.log({"integrator_trajectories": wandb.Image(fig)})
+    else:
+        plt.savefig("results/integrator_trajectories" + datetime.now().strftime("%Y%m%d-%H%M%S") + ".pdf")
 def plot_value_function_integrator(max_x1:float, max_x2:float,
                                 resolution:int, 
                                 value_net:nn.Module,
@@ -344,7 +348,10 @@ def plot_value_function_integrator(max_x1:float, max_x2:float,
     ax.set_zlabel("Value function") 
     ax.set_title("Value function landscape")
     fig.colorbar(surf)
-    plt.savefig("results/value_function_landscape" + datetime.now().strftime("%Y%m%d-%H%M%S") + ".pdf")
+    if wandb.run is not None:
+        wandb.log({"value_function_landscape": wandb.Image(fig)})
+    else:
+        plt.savefig("results/value_function_landscape" + datetime.now().strftime("%Y%m%d-%H%M%S") + ".pdf")
 
 class MultiObjectiveDoubleIntegratorEnv(SafeDoubleIntegratorEnv):
     """Stateless environment for discrete double integrator with two reward signals.
