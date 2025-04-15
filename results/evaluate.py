@@ -2,7 +2,7 @@ from torchrl.data import TensorSpec
 import wandb
 import torch
 from math import ceil
-from typing import Optional, List, Tuple, Dict, Any
+from typing import Optional, List, Tuple, Dict, Any, Callable
 from torch import nn
 from tensordict import TensorDict
 from tensordict.nn import TensorDictModule
@@ -19,7 +19,6 @@ from torchrl.envs import (
     Transform,
     TransformedEnv
 )
-from utils.utils import reset_batched_env
 
 class PolicyEvaluator:
     def __init__(self, 
@@ -40,7 +39,14 @@ class PolicyEvaluator:
             )
             for key in self.keys_to_log:
                 if key in eval_rollout["next"]:
-                    logs[f"eval {key}(average)"] = (eval_rollout["next", key].to(torch.float32).mean().item())
+                    if key == "step_count":
+                        logs[f"eval {key}(average)"] = (
+                            eval_rollout[key].max(dim=1).values.to(torch.float32).mean().item()
+                        )
+                    else:
+                        logs[f"eval {key}(average)"] = (
+                            eval_rollout["next", key].to(torch.float32).mean().item()
+                        )
                 elif key in eval_rollout:
                     logs[f"eval {key}(average)"] = (eval_rollout[key].to(torch.float32).mean().item())
             del eval_rollout
@@ -52,11 +58,10 @@ def calculate_bellman_violation(resolution:int,
                                 value_net:nn.Module,
                                 state_space:dict,
                                 policy_module:TensorDictModule,
-                                base_env:EnvBase,
+                                base_env_creator:Callable[...,EnvBase],
                                 gamma:float,
                                 state_group_name:Optional[str] = "obs",
-                                after_batch_transform:Optional[List[Transform]] = [],
-                                before_batch_transform:Optional[List[Transform]] = []):
+                                transforms:Optional[List[Transform]] = []):
 
     """Calculates the violation of the Bellman equation for the value function
     across the state space. This is useful to check if the value function is
@@ -92,18 +97,13 @@ def calculate_bellman_violation(resolution:int,
     mesh = torch.meshgrid(*linspaces,indexing="xy")
     inputs = torch.stack([m.flatten() for m in mesh],dim=-1).to(device)
     batch_size = inputs.shape[0]
-    transforms = [*before_batch_transform,
-                  BatchSizeTransform(batch_size=[batch_size],
-                                     reset_func=reset_batched_env,
-                                     env_kwarg=True),
-                  *after_batch_transform]
     transforms = [t.clone() for t in transforms if t is not None]
+    base_env = base_env_creator(batch_size=batch_size,device=device)
     env = TransformedEnv(
         base_env,
         Compose(*transforms)
     )
-    td = env.gen_params(batch_size=[inputs.shape[0]])
-    td = env.reset(td)
+    td = env.reset()
     for i, state_name in enumerate(state_space):
         td[state_name] = inputs[...,i]
     if state_group_name is not None:
@@ -114,8 +114,8 @@ def calculate_bellman_violation(resolution:int,
         td = env.step(policy_module(td))
         td_next = step_mdp(td)
         next_values = value_net(td_next["obs"]).detach()
-    costs = -td["next","reward"]
+    rewards = td["next","reward"]
     done = td_next["done"]
-    bellman_violation_tensor = (costs + gamma*next_values*~done - values).abs()
+    bellman_violation_tensor = (rewards + gamma*next_values*~done - values).abs()
     bellman_violation_tensor = bellman_violation_tensor.reshape(mesh[0].shape)
     return bellman_violation_tensor.cpu().numpy()

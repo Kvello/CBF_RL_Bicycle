@@ -11,7 +11,8 @@ class MultiGAE(TensorDictModuleBase):
     """
     def __init__(self, 
                  gamma:float, 
-                 lmdba:float,
+                 lmbda1:float,
+                 lmbda2:float,
                  V_primary:TensorDictModule,
                  V_secondary:TensorDictModule,
                  device: torch.device=torch.device("cpu"),
@@ -31,7 +32,8 @@ class MultiGAE(TensorDictModuleBase):
 
         super().__init__() 
         self.gamma = gamma
-        self.lmbda = lmdba
+        self.lmbda1 = lmbda1
+        self.lmbda2 = lmbda2
         self.device = device
         self.primary_reward_key = primary_reward_key
         self.secondary_reward_key = secondary_reward_key
@@ -44,9 +46,9 @@ class MultiGAE(TensorDictModuleBase):
 
         self.A_primary = GAE(
             gamma=self.gamma,
-            lmbda=self.lmbda,
+            lmbda=self.lmbda1,
+            average_gae=False,
             value_network=self.V_primary,
-            average_gae=True,
             device=self.device,
         )
         self.A_primary.set_keys(
@@ -57,9 +59,9 @@ class MultiGAE(TensorDictModuleBase):
         )
         self.A_secondary = GAE(
             gamma=self.gamma,
-            lmbda=self.lmbda,
+            lmbda=self.lmbda2,
+            average_gae=False,
             value_network=self.V_secondary,
-            average_gae=True,
             device=self.device,
         )
         self.A_secondary.set_keys(

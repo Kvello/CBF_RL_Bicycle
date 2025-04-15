@@ -15,13 +15,9 @@ class HiPPOLoss(LossModule):
         secondary_reward_key: str = "r2",
         *,
         clip_epsilon: float = 0.2,
-        entropy_bonus: bool = True,
+        entropy_coef: float = 0.0,
         samples_mc_entropy: int = 1,
-        entropy_coef: float = 0.01,
-        CBF_critic_coef: float = 1.0,
-        secondary_critic_coef: float = 1.0,
-        safety_objective_coef: float = 1.0,
-        secondary_objective_coef: float = 1.0,
+        critic_coef: float = 1.0,
         normalize_advantage: bool = False,
         gamma: float = None,
         separate_losses: bool = False,
@@ -36,20 +32,16 @@ class HiPPOLoss(LossModule):
         self.secondary_value_key = secondary_critic.out_keys[0]
         self.primary_reward_key = primary_reward_key
         self.secondary_reward_key = secondary_reward_key
-
-        self.CBF_critic_coef = CBF_critic_coef
-        self.secondary_critic_coef = secondary_critic_coef
-        self.safety_objective_coef = safety_objective_coef
-        self.secondary_objective_coef = secondary_objective_coef
+        self.critic_coef = critic_coef
 
         # We only use these to calculate the objective losses
         self.primary_loss = ClipPPOLoss(
             actor_network=actor,
             critic_network=primary_critic,
             clip_epsilon=clip_epsilon,
-            entropy_bonus=False,
-            entropy_coef=0.0,
-            critic_coef=self.CBF_critic_coef,
+            entropy_bonus=bool(entropy_coef),
+            entropy_coef=entropy_coef,
+            critic_coef=self.critic_coef,
             loss_critic_type="smooth_l1",
         )
         self.primary_loss.set_keys(
@@ -62,9 +54,9 @@ class HiPPOLoss(LossModule):
             actor_network=actor,
             critic_network=secondary_critic,
             clip_epsilon=clip_epsilon,
-            entropy_bonus=False,
-            entropy_coef=0.0,
-            critic_coef=self.secondary_critic_coef,
+            entropy_bonus=bool(entropy_coef),
+            entropy_coef=entropy_coef,
+            critic_coef=self.critic_coef,
             loss_critic_type="smooth_l1",
         )
         self.secondary_loss.set_keys(
@@ -79,8 +71,9 @@ class HiPPOLoss(LossModule):
             keys = ["loss_safety_objective",
                     "loss_secondary_objective",
                     "loss_CBF",
-                    "loss_secondary_critic"]
-            keys.append("ESS")
+                    "loss_secondary_critic",
+                    "loss_safety_entropy",
+                    "loss_secondary_entropy"]
             self._out_keys = keys
         return self._out_keys
 
@@ -108,17 +101,16 @@ class HiPPOLoss(LossModule):
             secondary_critic_loss = secondary_critic_loss.mean()
         secondary_loss_vals = self.secondary_loss(tensordict)
         primary_loss_vals = self.primary_loss(tensordict)
-        primary_loss_vals["loss_critic"] = primary_critic_loss * self.CBF_critic_coef
-        secondary_loss_vals["loss_critic"] = secondary_critic_loss * self.secondary_critic_coef
-        primary_loss_vals["loss_objective"] = primary_loss_vals["loss_objective"] * self.safety_objective_coef
-        secondary_loss_vals["loss_objective"] = secondary_loss_vals["loss_objective"] * self.secondary_objective_coef
-
+        primary_loss_vals["loss_critic"] = primary_critic_loss * self.critic_coef
+        secondary_loss_vals["loss_critic"] = secondary_critic_loss * self.critic_coef
         td_out = TensorDict(
             {
                 "loss_safety_objective": primary_loss_vals["loss_objective"],
                 "loss_secondary_objective": secondary_loss_vals["loss_objective"],
                 "loss_CBF": primary_loss_vals["loss_critic"],
                 "loss_secondary_critic": secondary_loss_vals["loss_critic"],
+                "loss_safety_entropy": primary_loss_vals["loss_entropy"],
+                "loss_secondary_entropy": secondary_loss_vals["loss_entropy"],
             }
         )
         return td_out

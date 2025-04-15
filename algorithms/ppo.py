@@ -58,6 +58,9 @@ class PPO(RLAlgoBase):
         warn_str = "secondary_reward_key not found in config, using default value of 'r2'"
         self.secondary_reward_key = get_config_value(config, "secondary_reward_key", "r2", warn_str)
 
+        warn_str = "entropy_coef not found in config, using default value of 0.00"
+        self.entropy_coef = get_config_value(config, "entropy_coef", 0.00, warn_str)
+
         self.loss_value_log_keys = ["loss_safety_objective", "loss_CBF"]
         self.reward_keys = {self.primary_reward_key, self.secondary_reward_key}
     def train(self,
@@ -125,8 +128,8 @@ class PPO(RLAlgoBase):
             actor_network=policy_module,
             critic_network=value_module,
             clip_epsilon=self.clip_epsilon,
-            entropy_bonus=False,
-            entropy_coef=0.0,
+            entropy_bonus=bool(self.entropy_coef),
+            entropy_coef=self.entropy_coef,
             critic_coef=self.critic_coef,
             loss_critic_type=self.loss_critictype,
         )
@@ -169,8 +172,6 @@ class PPO(RLAlgoBase):
                     {lr_str}, \
                     {eval_str}"
                 )
-        if wandb.run is not None:
-            wandb.finish() 
         collector.shutdown()
 
     def step(self, 
@@ -217,7 +218,9 @@ class PPO(RLAlgoBase):
             logs[key] /= self.num_epochs
         for key in self.reward_keys:
             logs[key] = tensordict_data["next",key].to(torch.float32).mean().item()
-        logs["step_count(average)"] = tensordict_data["step_count"].to(torch.float32).mean().item()
+        logs["step_count(average)"] = (
+            tensordict_data["step_count"].max(dim=1).values.to(torch.float32).mean().item()
+        )
         logs["lr"] = optim.param_groups[0]["lr"]
         if eval_func is not None:
             logs.update(eval_func(tensordict_data))
@@ -263,4 +266,8 @@ class PPO(RLAlgoBase):
         )
         
         loss_value.backward()
+        torch.nn.utils.clip_grad_norm_(
+            loss_module.parameters(),
+            self.max_grad_norm,
+        )
         return loss_vals
