@@ -18,6 +18,7 @@ class HiPPOLoss(LossModule):
         entropy_coef: float = 0.0,
         samples_mc_entropy: int = 1,
         critic_coef: float = 1.0,
+        supervision_coef: float = 1.0,
         normalize_advantage: bool = False,
         gamma: float = None,
         separate_losses: bool = False,
@@ -33,6 +34,7 @@ class HiPPOLoss(LossModule):
         self.primary_reward_key = primary_reward_key
         self.secondary_reward_key = secondary_reward_key
         self.critic_coef = critic_coef
+        self.supervision_coef = supervision_coef
 
         # We only use these to calculate the objective losses
         self.primary_loss = ClipPPOLoss(
@@ -71,6 +73,7 @@ class HiPPOLoss(LossModule):
             keys = ["loss_safety_objective",
                     "loss_secondary_objective",
                     "loss_CBF",
+                    "loss_CBF_supervised"
                     "loss_secondary_critic",
                     "loss_safety_entropy",
                     "loss_secondary_entropy"]
@@ -103,11 +106,24 @@ class HiPPOLoss(LossModule):
         primary_loss_vals = self.primary_loss(tensordict)
         primary_loss_vals["loss_critic"] = primary_critic_loss * self.critic_coef
         secondary_loss_vals["loss_critic"] = secondary_critic_loss * self.critic_coef
+
+        if "collision_states" in tensordict:
+            collision_states = tensordict["collision_states"]
+            CBF_collision_pred = self.primary_critic.module(collision_states)
+            supervised_CBF_loss = (
+                torch.nn.MSELoss(reduction="mean")(
+                    CBF_collision_pred,
+                    tensordict["collision_value"],
+                )
+            )*self.supervision_coef
+        else:
+            supervised_CBF_loss = torch.tensor(0.0, device=tensordict.device)
         td_out = TensorDict(
             {
                 "loss_safety_objective": primary_loss_vals["loss_objective"],
                 "loss_secondary_objective": secondary_loss_vals["loss_objective"],
                 "loss_CBF": primary_loss_vals["loss_critic"],
+                "loss_CBF_supervised": supervised_CBF_loss,
                 "loss_secondary_critic": secondary_loss_vals["loss_critic"],
                 "loss_safety_entropy": primary_loss_vals["loss_entropy"],
                 "loss_secondary_entropy": secondary_loss_vals["loss_entropy"],

@@ -4,7 +4,12 @@ from typing import List, Dict, Any, Optional, Callable
 from tensordict.nn import TensorDictModule
 from tensordict import TensorDict
 from torchrl.collectors import DataCollectorBase
-from torchrl.data.replay_buffers import TensorDictReplayBuffer
+from torchrl.data.replay_buffers import (
+    TensorDictReplayBuffer,
+    ReplayBuffer,
+    LazyTensorStorage,
+    RandomSampler,
+)
 from torchrl.envs import (
     TransformedEnv,
     EnvBase,
@@ -150,11 +155,22 @@ class HierarchicalPPO(PPO):
         warn_str = "entropy_coef not found in config, using default value of 0.0"
         self.entropy_coef = get_config_value(config, "entropy_coef", 0.0, warn_str)
 
+        warn_str = "collision_buffer_size not found in config, using default value of 1e6"
+        self.collision_buffer_size = get_config_value(config, 
+                                                      "collision_buffer_size",
+                                                      int(1e6),
+                                                      warn_str)
+        warn_str = "supervision_coef not found in config, using default value of 1.0"
+        self.supervision_coef = get_config_value(config, "supervision_coef", 1.0, warn_str)
+
         self.loss_value_log_keys = {
             "loss_safety_objective",
             "loss_secondary_objective",
             "loss_CBF",
+            "loss_CBF_supervised",
             "loss_secondary_critic",
+            "loss_safety_entropy",
+            "loss_secondary_entropy",
         }
         self.reward_keys = {self.primary_reward_key, self.secondary_reward_key}
 
@@ -225,6 +241,7 @@ class HierarchicalPPO(PPO):
             secondary_critic=V_secondary,
             clip_epsilon=self.clip_epsilon,
             critic_coef=self.critic_coef,
+            supervision_coef=self.supervision_coef,
             entropy_coef=self.entropy_coef,
             gamma=self.gamma,
         )
@@ -243,6 +260,11 @@ class HierarchicalPPO(PPO):
             list(V_primary.parameters()) +
             list(V_secondary.parameters()),
             **self.config.get("optim_kwargs", {})
+        )
+        self.collision_buffer = ReplayBuffer(
+            storage=LazyTensorStorage(max_size = self.collision_buffer_size,
+                                      device=self.device),
+            sampler=RandomSampler(),
         )
         print("Training with config:")
         print(self.config)
@@ -293,7 +315,9 @@ class HierarchicalPPO(PPO):
          
         loss_vals = loss_module(tensordict)
         critic_loss = (
-            loss_vals["loss_CBF"] + loss_vals["loss_secondary_critic"]
+            loss_vals["loss_CBF"] +
+            loss_vals["loss_secondary_critic"] +
+            loss_vals["loss_CBF_supervised"]
         )
         critic_loss.backward()
         safety_loss = (
