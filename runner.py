@@ -106,7 +106,7 @@ if __name__ == "__main__":
     args["lmbda1"] = 0.1
     args["lmbda2"] = 0.95
     args["critic_coef"] = 1.0
-    args["supervision_coef"] = 0.0
+    args["supervision_coef"] = 1.0
     args["collision_buffer_size"] = args["frames_per_batch"]
     args["loss_critic_type"] = "smooth_l1"
     args["optim_kwargs"] = {"lr": 5e-5}
