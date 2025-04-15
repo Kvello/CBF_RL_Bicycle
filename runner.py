@@ -112,7 +112,7 @@ if __name__ == "__main__":
     args["state_space"] = state_space
     # P(i) = p_i^alpha / sum(p_i^alpha)
     # w(i) = 1/(N*P(i))^beta
-    args["alpha"] = 0.8
+    args["alpha"] = 0.0
     args["beta"] = 1.0
     args["primary_reward_key"] = "r1"
     args["secondary_reward_key"] = "r2"
