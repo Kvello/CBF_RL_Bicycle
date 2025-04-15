@@ -100,12 +100,14 @@ if __name__ == "__main__":
     args["frames_per_batch"] = int(2**12)
     args["sub_batch_size"] = int(2**8)
     args["max_grad_norm"] = 1.0
-    args["total_frames"] = int(2**20)
+    args["total_frames"] = int(2**22)
     args["device"] = device
     args["clip_epsilon"] = 0.2
     args["lmbda1"] = 0.1
     args["lmbda2"] = 0.95
     args["critic_coef"] = 1.0
+    args["supervision_coef"] = 0.0
+    args["collision_buffer_size"] = args["frames_per_batch"]
     args["loss_critic_type"] = "smooth_l1"
     args["optim_kwargs"] = {"lr": 5e-5}
     args["bellman_eval_res"] = 10 #Resolution of grid over state space used for calculating Bellman violation
@@ -235,12 +237,12 @@ if __name__ == "__main__":
             logs = defaultdict(list)
             bm_viol = calculate_bellman_violation(
                 args.get("bellman_eval_res",10),
-                CBF_net,
+                CBF_module,
                 state_space, 
                 policy_module,
                 MultiObjectiveDoubleIntegratorEnv, 
                 args.get("gamma"),
-                transforms=env.transform
+                transforms=env.transform[:-1]
             )
             eval_logs = evaluator.evaluate_policy()
             logs.update(eval_logs)
@@ -305,28 +307,29 @@ if __name__ == "__main__":
     if args.get("plot_CBF") and args.get("plot_traj") > 0:
         print("Plotting CBF")
         resolution = 10
-        plot_value_function_integrator(max_x1, 
-                                       max_x2,
+        plot_value_function_integrator(parameters["max_x1"], 
+                                       parameters["max_x2"],
                                        resolution,
-                                       CBF_net)
+                                       CBF_module,
+                                       transforms=env.transform[:-1])
     if args.get("plot_traj") > 0:
         plot_integrator_trajectories(env, 
                                     policy_module,
                                     args["max_rollout_len"],
                                     args.get("plot_traj"),
-                                    CBF_net)
+                                    CBF_module)
         print("Plotted trajectories")
     if args.get("plot_bellman_violation"):
         print("Calculating and plotting Bellman violation")
         obs_norm_loc = env.transform[3].loc
         obs_norm_scale = env.transform[3].scale
         bm_viol = calculate_bellman_violation(10, 
-                                            CBF_net,
+                                            CBF_module,
                                             state_space, 
                                             policy_module,
                                             MultiObjectiveDoubleIntegratorEnv,
                                             args.get("gamma"),
-                                            transforms=env.transform)
+                                            transforms=env.transform[:-1])
         plt.figure(figsize=(10, 10))
         # Better with contourf, or imshow or maybe surface plot or pcolormesh
         plt.contourf(bm_viol,cmap="coolwarm")
