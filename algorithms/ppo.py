@@ -204,10 +204,10 @@ class PPO(RLAlgoBase):
         collision_indcs = torch.where(
             td["next", "reward"] <0.0
         )[:-1]
-        if len(collision_indcs) == 0:
+        collision_states = states[collision_indcs]
+        if collision_states.shape[:-1] == 0:
             # No collision states to add
             return
-        collision_states = states[collision_indcs]
         value_target_collision_states = (
             td["next","reward"][td["next","reward"] < 0.0]
         ).unsqueeze(-1)
@@ -215,6 +215,7 @@ class PPO(RLAlgoBase):
             "collision_states": collision_states,
             "collision_value": value_target_collision_states,
         }, batch_size=collision_states.shape[:-1], device=self.device)
+        self.collision_buffer.extend(new_states)
     def step(self, 
              tensordict_data: TensorDict,
              loss_module: LossModule,
