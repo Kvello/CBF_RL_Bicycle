@@ -85,6 +85,9 @@ def calculate_bellman_violation(resolution:int,
         after the batch transformation. Default is empty list.
         before_batch_transform (Transform): A transform to apply to the base env
         before the batch transformation. Default is empty list.
+    Returns:
+        bellman_violation_tensor (np.ndarray): The Bellman violation tensor.
+        mesh (np.ndarray): The meshgrid of the state space.
     """
     dim = len(state_space)
     device = value_module.device
@@ -120,4 +123,5 @@ def calculate_bellman_violation(resolution:int,
     done = td_next["done"]
     bellman_violation_tensor = (rewards + gamma*next_values*~done - values).abs()
     bellman_violation_tensor = bellman_violation_tensor.reshape(mesh[0].shape)
-    return bellman_violation_tensor.cpu().numpy()
+    mesh_np = [m.cpu().numpy() for m in mesh]
+    return bellman_violation_tensor.cpu().numpy(), mesh_np

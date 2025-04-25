@@ -100,7 +100,7 @@ if __name__ == "__main__":
     args["frames_per_batch"] = int(2**12)
     args["sub_batch_size"] = int(2**8)
     args["max_grad_norm"] = 1.0
-    args["total_frames"] = int(2**22)
+    args["total_frames"] = int(2**14)
     args["device"] = device
     args["clip_epsilon"] = 0.2
     args["lmbda1"] = 0.1
@@ -235,7 +235,7 @@ if __name__ == "__main__":
         base_env = env.base_env if isinstance(env, TransformedEnv) else env
         def eval_func(data):
             logs = defaultdict(list)
-            bm_viol = calculate_bellman_violation(
+            bm_viol, *_ = calculate_bellman_violation(
                 args.get("bellman_eval_res",10),
                 CBF_module,
                 state_space, 
@@ -323,16 +323,18 @@ if __name__ == "__main__":
         print("Calculating and plotting Bellman violation")
         obs_norm_loc = env.transform[3].loc
         obs_norm_scale = env.transform[3].scale
-        bm_viol = calculate_bellman_violation(10, 
+        bm_viol,mesh = calculate_bellman_violation(10, 
                                             CBF_module,
                                             state_space, 
                                             policy_module,
                                             MultiObjectiveDoubleIntegratorEnv,
                                             args.get("gamma"),
                                             transforms=env.transform[:-1])
+        X = mesh[0].reshape(bm_viol.shape)
+        Y = mesh[1].reshape(bm_viol.shape)
         plt.figure(figsize=(10, 10))
         # Better with contourf, or imshow or maybe surface plot or pcolormesh
-        plt.contourf(bm_viol,cmap="coolwarm")
+        plt.contourf(X,Y,bm_viol,cmap="coolwarm")
         plt.colorbar()
         plt.title("Bellman violation")
         plt.xlabel("x1")
