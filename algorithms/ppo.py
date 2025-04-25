@@ -4,6 +4,7 @@ from typing import List, Dict, Any, Optional, Callable
 from tensordict.nn import TensorDictModule, TensorDictModuleBase
 from tensordict import TensorDict
 from torchrl.collectors import DataCollectorBase
+from torchrl.data import ReplayBuffer, RandomSampler, LazyTensorStorage
 from torchrl.data.replay_buffers import TensorDictReplayBuffer
 from torchrl.envs import (
     TransformedEnv,
@@ -60,8 +61,20 @@ class PPO(RLAlgoBase):
 
         warn_str = "entropy_coef not found in config, using default value of 0.00"
         self.entropy_coef = get_config_value(config, "entropy_coef", 0.00, warn_str)
+        
+        warn_str = "collision_buffer_size not found in config, using default value of 1e6"
+        self.collision_buffer_size = get_config_value(config, 
+                                                       "collision_buffer_size",
+                                                       int(1e6),
+                                                       warn_str)
 
-        self.loss_value_log_keys = ["loss_safety_objective", "loss_CBF"]
+        warn_str = "supervision_coef not found in config, using default value of 1.0"
+        self.supervision_coef = get_config_value(config, "supervision_coef", 1.0, warn_str)
+
+        self.loss_value_log_keys = ["loss_safety_objective",
+                                    "loss_CBF", 
+                                    "loss_safety_entropy",
+                                    "loss_CBF_supervised",]
         self.reward_keys = {self.primary_reward_key, self.secondary_reward_key}
     def train(self,
               policy_module: TensorDictModule,
@@ -141,6 +154,11 @@ class PPO(RLAlgoBase):
         )
         self.optim = optim(self.loss_module.parameters(), **self.config.get("optim_kwargs", {}))
 
+        self.collision_buffer = ReplayBuffer(
+            storage=LazyTensorStorage(max_size = self.collision_buffer_size,
+                                      device=self.device),
+            sampler=RandomSampler(),
+        )
         print("Training with config:")
         print(self.config)
         logs = defaultdict(list)
@@ -173,7 +191,31 @@ class PPO(RLAlgoBase):
                     {eval_str}"
                 )
         collector.shutdown()
-
+    def _update_collision_buffer(self, td: TensorDict):
+        """
+        Update the collision buffer with the current tensordict data.
+        Note: We assume that the data from the collector is split into trajectories
+        by split_trajs = True.
+        
+        Args:
+            td (TensorDict): The data tensor dictionary.
+        """
+        states = td["obs"]
+        collision_indcs = torch.where(
+            td["next", "reward"] <0.0
+        )[:-1]
+        collision_states = states[collision_indcs]
+        if collision_states.shape[:-1] == 0:
+            # No collision states to add
+            return
+        value_target_collision_states = (
+            td["next","reward"][td["next","reward"] < 0.0]
+        ).unsqueeze(-1)
+        new_states = TensorDict({
+            "collision_states": collision_states,
+            "collision_value": value_target_collision_states,
+        }, batch_size=collision_states.shape[:-1], device=self.device)
+        self.collision_buffer.extend(new_states)
     def step(self, 
              tensordict_data: TensorDict,
              loss_module: LossModule,
@@ -196,6 +238,7 @@ class PPO(RLAlgoBase):
         Returns:
             Dict[str, float]: The logs.
         """
+        self._update_collision_buffer(tensordict_data)
         if self.config is None:
             raise ValueError("Setup must be called with a config before training")
         logs = defaultdict(list)
@@ -207,10 +250,17 @@ class PPO(RLAlgoBase):
             replay_buffer.extend(data_view)
             for _ in range(self.frames_per_batch // self.sub_batch_size):
                 subdata = replay_buffer.sample(self.sub_batch_size).to(self.device)
+                if len(self.collision_buffer) > 0:
+                    # The buffer should only be empty in the very beginning
+                    collision_data = self.collision_buffer.sample(
+                        self.sub_batch_size
+                    ).to(self.device)
+                    subdata.update(collision_data)
                 loss_vals = self._set_gradients(loss_module, subdata)
                 replay_buffer.update_tensordict_priority(subdata) 
                 optim.step()
                 optim.zero_grad()
+                
 
                 for key in self.loss_value_log_keys:
                     logs[key] += loss_vals[key].item()
@@ -258,11 +308,31 @@ class PPO(RLAlgoBase):
         # rename loss value keys
         loss_vals["loss_CBF"] = loss_vals["loss_critic"]
         loss_vals["loss_safety_objective"] = loss_vals["loss_objective"]
+        loss_vals["loss_safety_entropy"] = loss_vals["loss_entropy"]
         del loss_vals["loss_critic"]
         del loss_vals["loss_objective"]
+        del loss_vals["loss_entropy"]
+        # For simplicity, we calculate the collision loss(unsafe states) here, instead of in the
+        # loss module. 
+        if "collision_states" in tensordict:
+            # Handle the case where the collision buffer is empty
+            # (Only in the beginning of training)
+            unsafe_states = tensordict["collision_states"]
+            unsafe_CBF_prediction = loss_module.critic_network.module(unsafe_states)
+            target_unsafe_value = unsafe_states["collision_value"] # This will nominally be -1
+            loss_vals["loss_CBF_supervised"] = (
+                torch.nn.MSELoss(reduction='mean')(
+                    unsafe_CBF_prediction,
+                    target_unsafe_value,
+                )
+            )*self.supervision_coef
+        else:
+            loss_vals["loss_CBF_supervised"] = torch.tensor(0.0).to(self.device)
         loss_value = (
             loss_vals["loss_safety_objective"]
             + loss_vals["loss_CBF"]
+            + loss_vals["loss_safety_entropy"]
+            + loss_vals["loss_CBF_supervised"]
         )
         
         loss_value.backward()

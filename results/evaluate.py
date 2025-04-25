@@ -55,12 +55,11 @@ class PolicyEvaluator:
     
 # TODO: Add functionality for multi-step evaluation of Bellman violation?
 def calculate_bellman_violation(resolution:int, 
-                                value_net:nn.Module,
+                                value_module:TensorDictModule,
                                 state_space:dict,
                                 policy_module:TensorDictModule,
                                 base_env_creator:Callable[...,EnvBase],
                                 gamma:float,
-                                state_group_name:Optional[str] = "obs",
                                 transforms:Optional[List[Transform]] = []):
 
     """Calculates the violation of the Bellman equation for the value function
@@ -88,7 +87,8 @@ def calculate_bellman_violation(resolution:int,
         before the batch transformation. Default is empty list.
     """
     dim = len(state_space)
-    device = value_net.device
+    device = value_module.device
+    value_key = value_module.out_keys[0]
     linspaces = [torch.linspace(state_space[state_name]["low"],
                                 state_space[state_name]["high"],
                                 ceil(resolution*(state_space[state_name]["high"]-\
@@ -103,17 +103,19 @@ def calculate_bellman_violation(resolution:int,
         base_env,
         Compose(*transforms)
     )
-    td = env.reset()
+    def apply_transforms(td:TensorDict):
+        for t in transforms:
+            td = t(td)
+        return td
+    td = base_env.reset()
     for i, state_name in enumerate(state_space):
         td[state_name] = inputs[...,i]
-    if state_group_name is not None:
-        td[state_group_name] = torch.stack([td[state_name] for state_name in state_space],
-                                          dim=-1)
-    values = value_net(inputs).detach()
+    td = apply_transforms(td)
+    values = value_module(td)[value_key].detach()
     with set_exploration_type(ExplorationType.DETERMINISTIC), torch.no_grad():
         td = env.step(policy_module(td))
         td_next = step_mdp(td)
-        next_values = value_net(td_next["obs"]).detach()
+        next_values = value_module(td_next)[value_key].detach()
     rewards = td["next","reward"]
     done = td_next["done"]
     bellman_violation_tensor = (rewards + gamma*next_values*~done - values).abs()

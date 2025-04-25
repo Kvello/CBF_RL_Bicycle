@@ -3,6 +3,7 @@ from torch import nn
 import numpy as np
 from typing import Union, Optional, List, Callable
 from tensordict import TensorDict, TensorDictBase
+from tensordict.nn import TensorDictModule
 from torchrl.data.tensor_specs import (
     BoundedTensorSpec, 
     CompositeSpec,
@@ -13,7 +14,7 @@ from torchrl.envs import (
     EnvBase,
     Compose,
     TransformedEnv,
-    
+    Transform
 )
 from torchrl.envs.common import EnvBase
 from torchrl.envs.utils import make_composite_from_td
@@ -229,7 +230,7 @@ def plot_integrator_trajectories(env: EnvBase,
                                  policy_module: nn.Module,
                                  rollout_len:int, 
                                  num_trajectories:int,
-                                 value_net:Optional[nn.Module]=None):
+                                 value_module:Optional[TensorDictModule]=None):
     """Plots the trajectories of the agent in the environment.
 
     Args:
@@ -239,7 +240,7 @@ def plot_integrator_trajectories(env: EnvBase,
         num_trajectories (int): The number of trajectories to plot.
         max_x1 (float): The maximum value of x1.
         max_x2 (float): The maximum value of x2.
-        value_net (nn.Module, optional): The value function module. Defaults to None.
+        value_module (TensorDictModule optional): The value function module. Defaults to None.
         if provided will be used to plot the value function landscape as a countour plot
         under the trajectories.
     """
@@ -247,6 +248,7 @@ def plot_integrator_trajectories(env: EnvBase,
     fig = plt.figure()
     i=0
     params = env.params
+    value_key = value_module.out_keys[0] if value_module is not None else None
     max_x1 = params["max_x1"]
     max_x2 = params["max_x2"]
     print(f"Generating {num_trajectories} trajectories")
@@ -279,7 +281,7 @@ def plot_integrator_trajectories(env: EnvBase,
     plt.title("Trajectories of the agent")
     plt.xlim(-max_x1*1.1, max_x1*1.1)
     plt.ylim(-max_x2*1.1, max_x2*1.1)
-    if value_net is not None:
+    if value_module is not None:
         levels = [0.0]
         x1_low = -max_x1*1.1
         x1_high = max_x1*1.1
@@ -288,9 +290,20 @@ def plot_integrator_trajectories(env: EnvBase,
         resolution = 10
         x_vals = torch.linspace(x1_low, x1_high, ceil(resolution*(x1_high-x1_low)))
         y_vals = torch.linspace(x2_low, x2_high, ceil(resolution*(x2_high-x2_low)))
-        mesh = torch.meshgrid(x_vals, y_vals)
+        mesh = torch.meshgrid(x_vals, y_vals,indexing="xy")
         inputs = torch.stack([m.flatten() for m in mesh],dim=-1)
-        value_function_landscape = value_net(inputs).detach().cpu().numpy()
+        td = TensorDict({
+            "x1": inputs[...,0],
+            "x2": inputs[...,1],
+            "y1_ref": inputs[...,0],
+            "y2_ref": inputs[...,1],
+            "done": torch.zeros_like(inputs[...,0],dtype=torch.bool),
+        })
+        for t in env.transform[:-1]:
+            if all(key in td for key in t.in_keys):
+                td = t(td)
+            
+        value_function_landscape = value_module(td)[value_key].detach().cpu().numpy()
         value_landscape = value_function_landscape.reshape(mesh[0].shape)
         
         locator = MaxNLocator(nbins=10)
@@ -303,9 +316,10 @@ def plot_integrator_trajectories(env: EnvBase,
     else:
         plt.savefig("results/integrator_trajectories" + datetime.now().strftime("%Y%m%d-%H%M%S") + ".pdf")
 def plot_value_function_integrator(max_x1:float, max_x2:float,
-                                resolution:int, 
-                                value_net:nn.Module,
-                                levels:List[float] = [0.0]):
+                                    resolution:int, 
+                                    value_module:TensorDictModule,
+                                    levels:List[float] = [0.0],
+                                    transforms:Optional[List[Transform]] = []):
     """Plots the value function landscape across the state space.
     Current implementation only supports 2D state spaces.
     Args:
@@ -324,12 +338,23 @@ def plot_value_function_integrator(max_x1:float, max_x2:float,
     x1_high = max_x1*1.1
     x2_low = -max_x2*1.1
     x2_high = max_x2*1.1
+    value_key = value_module.out_keys[0]
     linspace_x1 = torch.linspace(x1_low, x1_high, ceil(resolution*(x1_high-x1_low)))
     linspace_x2 = torch.linspace(x2_low, x2_high, ceil(resolution*(x2_high-x2_low)))
     linspaces = [linspace_x1, linspace_x2]
     mesh = torch.meshgrid(*linspaces,indexing="xy")
     inputs = torch.stack([m.flatten() for m in mesh],dim=-1)
-    outputs = value_net(inputs).detach().cpu().numpy()
+    td = TensorDict({
+        "x1": inputs[...,0],
+        "x2": inputs[...,1],
+        "y1_ref": inputs[...,0],
+        "y2_ref": inputs[...,1],
+        "done": torch.zeros_like(inputs[...,0],dtype=torch.bool),
+    },batch_size=inputs.shape[:-1],device=inputs.device)
+    for t in transforms:
+        if all(key in td for key in t.in_keys):
+            td = t(td)
+    outputs = value_module(td)[value_key].detach().cpu().numpy()
     outputs = outputs.reshape(mesh[0].shape)
     fig = plt.figure()
 
