@@ -205,7 +205,7 @@ class PPO(RLAlgoBase):
             td["next", "reward"] <0.0
         )[:-1]
         collision_states = states[collision_indcs]
-        if collision_states.shape[:-1] == 0:
+        if collision_states.shape[0] == 0:
             # No collision states to add
             return
         value_target_collision_states = (
