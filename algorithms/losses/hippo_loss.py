@@ -29,8 +29,6 @@ class HiPPOLoss(LossModule):
         self.actor_network = actor
         self.primary_critic = primary_critic
         self.secondary_critic = secondary_critic
-        self.primary_value_key = primary_critic.out_keys[0]
-        self.secondary_value_key = secondary_critic.out_keys[0]
         self.primary_reward_key = primary_reward_key
         self.secondary_reward_key = secondary_reward_key
         self.critic_coef = critic_coef
@@ -85,27 +83,8 @@ class HiPPOLoss(LossModule):
         self._out_keys = values
     
     def forward(self, tensordict: TensorDictBase) -> TensorDictBase:
-        primary_value = self.primary_critic(tensordict)[self.primary_value_key]
-        secondary_value = self.secondary_critic(tensordict)[self.secondary_value_key]
-
-        with torch.no_grad():
-            tensordict["td_error"] = torch.abs(tensordict["V1_target"] - primary_value)
-        primary_critic_loss = torch.nn.HuberLoss(reduction='none')(primary_value, tensordict["V1_target"])
-        secondary_critic_loss = torch.nn.HuberLoss(reduction='none')(secondary_value, tensordict["V2_target"])
-        # Allow for importance sampling of the samples weigthed on the primary critic td error
-        if "_weight" in tensordict:
-            primary_critic_loss = (tensordict["_weight"] * primary_critic_loss).mean() 
-            secondary_critic_loss = (tensordict["_weight"] * secondary_critic_loss).mean()
-            # I think this is a valid way of weighting the actor loss
-            tensordict["A1"] = tensordict["A1"]* tensordict["_weight"]
-            tensordict["A2"] = tensordict["A2"]* tensordict["_weight"]
-        else:
-            primary_critic_loss = primary_critic_loss.mean()
-            secondary_critic_loss = secondary_critic_loss.mean()
         secondary_loss_vals = self.secondary_loss(tensordict)
         primary_loss_vals = self.primary_loss(tensordict)
-        primary_loss_vals["loss_critic"] = primary_critic_loss * self.critic_coef
-        secondary_loss_vals["loss_critic"] = secondary_critic_loss * self.critic_coef
 
         if "collision_states" in tensordict:
             collision_states = tensordict["collision_states"]
