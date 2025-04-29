@@ -63,11 +63,14 @@ def parse_args()->Dict[str,Any]:
                         default=False, help="Track the Bellman violation")
     parser.add_argument("--plot_bellman_violation", action="store_true",
                         default=False, help="Plot the Bellman violation of trained value function and policy")
+    parser.add_argument("--seed", type=int, default=0, help="Random seed")
     return vars(parser.parse_args())
     
 if __name__ == "__main__":
     args = parse_args() 
 
+    # Set seed
+    torch.manual_seed(args["seed"])
         
     #######################
     # Parallelization:
@@ -99,7 +102,7 @@ if __name__ == "__main__":
     args["frames_per_batch"] = int(2**12)
     args["sub_batch_size"] = int(2**8)
     args["max_grad_norm"] = 1.0
-    args["total_frames"] = int(2**21)
+    args["total_frames"] = int(2**19)
     args["device"] = device
     args["clip_epsilon"] = 0.2
     args["lmbda1"] = 0.1
@@ -121,7 +124,8 @@ if __name__ == "__main__":
     #######################
     base_env = MultiObjectiveDoubleIntegratorEnv(batch_size=args.get("num_parallel_env"),
                                                  device=device,
-                                                 td_params=parameters)
+                                                 td_params=parameters,
+                                                 seed=args["seed"])
     obs_signals = ["x1","x2"]
     ref_signals = ["y1_ref","y2_ref"]
     transforms = [
