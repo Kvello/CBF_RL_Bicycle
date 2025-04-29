@@ -257,7 +257,6 @@ class PPO(RLAlgoBase):
                     ).to(self.device)
                     subdata.update(collision_data)
                 loss_vals = self._set_gradients(loss_module, subdata)
-                replay_buffer.update_tensordict_priority(subdata) 
                 optim.step()
                 optim.zero_grad()
                 
@@ -289,22 +288,7 @@ class PPO(RLAlgoBase):
         Returns:
             Dict[str, float]: The loss values.
         """
-        value_key = loss_module.critic_network.out_keys[0]
-        state_value = loss_module.critic_network(tensordict)[value_key]
-        with torch.no_grad():
-            tensordict["td_error"] = torch.abs(tensordict["value_target"] - state_value)
-        critic_loss = torch.nn.HuberLoss(reduction='none')(state_value, tensordict["value_target"])
-        # Allow for importance sampling of the samples
-        if "_weight" in tensordict:
-            critic_loss = (tensordict["_weight"] * critic_loss).mean() 
-            # I think this is a valid way of weighting the actor loss
-            # The tensordict sampled from the replay buffer is a copy of the original,
-            # so we can safely modify it without affecting the data in the replay buffer
-            tensordict["advantage"] = tensordict["advantage"]* tensordict["_weight"]
-        else:
-            critic_loss = critic_loss.mean()
         loss_vals = loss_module(tensordict)
-        loss_vals["loss_critic"] = critic_loss * self.critic_coef
         # rename loss value keys
         loss_vals["loss_CBF"] = loss_vals["loss_critic"]
         loss_vals["loss_safety_objective"] = loss_vals["loss_objective"]

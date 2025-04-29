@@ -10,7 +10,7 @@ from tensordict import TensorDict
 from torchrl.data.replay_buffers import TensorDictReplayBuffer
 from torchrl.collectors import MultiSyncDataCollector, SyncDataCollector
 from torchrl.data.replay_buffers.storages import LazyTensorStorage
-from torchrl.data.replay_buffers.samplers import SamplerWithoutReplacement, PrioritizedSampler
+from torchrl.data.replay_buffers.samplers import SamplerWithoutReplacement
 from torchrl.envs import (
     Compose,
     DoubleToFloat,
@@ -100,7 +100,7 @@ if __name__ == "__main__":
     args["frames_per_batch"] = int(2**12)
     args["sub_batch_size"] = int(2**8)
     args["max_grad_norm"] = 1.0
-    args["total_frames"] = int(2**14)
+    args["total_frames"] = int(2**21)
     args["device"] = device
     args["clip_epsilon"] = 0.2
     args["lmbda1"] = 0.1
@@ -112,10 +112,6 @@ if __name__ == "__main__":
     args["optim_kwargs"] = {"lr": 5e-5}
     args["bellman_eval_res"] = 10 #Resolution of grid over state space used for calculating Bellman violation
     args["state_space"] = state_space
-    # P(i) = p_i^alpha / sum(p_i^alpha)
-    # w(i) = 1/(N*P(i))^beta
-    args["alpha"] = 0.0
-    args["beta"] = 1.0
     args["primary_reward_key"] = "r1"
     args["secondary_reward_key"] = "r2"
     args["entropy_coef"] = 0.001
@@ -264,14 +260,8 @@ if __name__ == "__main__":
 
         replay_buffer = TensorDictReplayBuffer(
             storage=LazyTensorStorage(max_size=args["frames_per_batch"]),
-            sampler=PrioritizedSampler(max_capacity=args["frames_per_batch"],
-                                        alpha=args.get("alpha",0.6),
-                                        beta=args.get("beta",0.4)),
+            sampler=SamplerWithoutReplacement(),
         )
-        # replay_buffer = TensorDictReplayBuffer(
-        #     storage=LazyTensorStorage(max_size=args["frames_per_batch"]),
-        #     sampler=SamplerWithoutReplacement(),
-        # )
         optim = torch.optim.Adam
         # scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
         #     optim, args["total_frames"] // args["frames_per_batch"], 1e-8
