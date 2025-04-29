@@ -24,13 +24,11 @@ import wandb
 from utils.utils import get_config_value
 from .ppo import PPO
 import warnings
-from utils.filters import Filter, NormalizerFactory
 
 def gradient_projection(
     common_module:torch.nn.Module,
     primary_loss:torch.Tensor,
     secondary_loss:torch.Tensor,
-    gradient_scaler:Callable[float,float]= lambda x: x,
     debug:bool = False)->torch.Tensor:
         r"""Calculates a projected gradient of the secondary loss onto the nullspace
         of the primary loss. Returns the sum of the primary loss gradient and the
@@ -50,9 +48,6 @@ def gradient_projection(
             containing the parameters
             primary_loss (torch.Tensor): The primary loss tensor
             secondary_loss (torch.Tensor): The secondary loss tensor
-            gradient_scaler (Callable[float,float], optional): A function that scales the secondary
-            loss gradient with respect to the primary loss gradient. This will typically be a filter,
-            or a constant. Defaults to lambda x: x. Helps with stability.
         Returns:
             torch.Tensor: The projected and combined gradient
             
@@ -89,29 +84,7 @@ def gradient_projection(
             secondary_proj = grad_vec_secondary_loss - secondary_proj 
         else:
             secondary_proj = grad_vec_secondary_loss
-        rl_k = secondary_proj.norm() / grad_vec_primary_loss.norm()
-        if torch.isnan(rl_k).any() or torch.isinf(rl_k).any():
-            print("rl_k is NaN or Inf")
-            print("primary_loss:",primary_loss)
-            print("secondary_loss:",secondary_loss)
-            rl_k = torch.tensor(0.0)
-            return torch.zeros_like(grad_vec_primary_loss)
-        relative_length = gradient_scaler(rl_k)
-        # Make sure gradient_scaler is ran in the case of a zero secondary loss gradient,
-        # as this still is a valid case for the gradient scaler, and should be reported to the
-        # gradient scaler if it is statefull(e.g a filter).
-        if wandb.run is not None and debug:
-            wandb.log({"relative gradient length":relative_length})
-            wandb.log({"Estimated mean:": gradient_scaler.mean})
-        if torch.isclose(secondary_proj.norm(),torch.tensor(0.0),atol=1e-10):
-            # If secondary loss gradient is zero, ignore the projection
-            # and return the primary loss gradient
-            return grad_vec_primary_loss 
-        secondary_proj = secondary_proj/secondary_proj.norm()
-        grad = (
-            secondary_proj*grad_vec_primary_loss.norm()*relative_length 
-            + grad_vec_primary_loss
-        )
+        grad = secondary_proj + grad_vec_primary_loss
         return grad
 
 class HierarchicalPPO(PPO):
@@ -329,7 +302,6 @@ class HierarchicalPPO(PPO):
         policy_grad = gradient_projection(loss_module.actor_network, 
                             safety_loss, 
                             secondary_loss,
-                            self.gradient_normalization,
                             debug=self.debug)
                 # Set gradient to the policy module
         last_param_idx = 0
