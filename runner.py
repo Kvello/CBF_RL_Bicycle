@@ -116,7 +116,7 @@ if __name__ == "__main__":
     if args.get("eval", False):
         logs = runner.evaluate()
         print("Evaluation logs: ", logs)
-    if args.get("plot_results", False):
+    if args.get("plot", False):
         runner.plot_results()
     
     if wandb.run is not None:
