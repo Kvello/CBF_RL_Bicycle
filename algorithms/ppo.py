@@ -272,7 +272,7 @@ class PPO(RLAlgoBase):
         )
         logs["lr"] = optim.param_groups[0]["lr"]
         if eval_func is not None:
-            logs.update(eval_func(tensordict_data))
+            logs.update(eval_func())
         return logs
 
     def _set_gradients(self,
