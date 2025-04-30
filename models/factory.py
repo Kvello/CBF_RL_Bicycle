@@ -1,21 +1,38 @@
-from .cdf import (
-    FfCDF,
-    QuadraticCDF,
-    CDFBase,
+from .value import (
+    FfValueFunction,
+    QuadraticValueFunction,
+    ValueBase,
+)
+from .policy import (
+    Ff,
+    PolicyBase,
 )
 from typing import Type
 
 # TODO: Create registration functionality?
-class CDFFactory:
+class ValueFactory:
     """Factory for creating different Safety Value Function architectures."""
     architectures = {
-        "feedforward": FfCDF,
-        "quadratic": QuadraticCDF,
+        "feedforward": FfValueFunction,
+        "quadratic": QuadraticValueFunction,
     }
 
     @staticmethod
-    def create(name: str, **kwargs) -> Type[CDFBase]:
-        if name not in CDFFactory.architectures:
+    def create(name: str, **kwargs) -> Type[ValueBase]:
+        if name not in ValueFactory.architectures:
             raise ValueError(f"Unknown architecture '{name}'.\
-                             Available: {list(CDFFactory.architectures.keys())}")
-        return CDFFactory.architectures[name](**kwargs)
+                             Available: {list(ValueFactory.architectures.keys())}")
+        return ValueFactory.architectures[name](**kwargs)
+
+class PolicyFactory:
+    """Factory for creating different Policy architectures."""
+    architectures = {
+        "feedforward": Ff,
+    }
+
+    @staticmethod
+    def create(name: str, **kwargs) -> Type[PolicyBase]:
+        if name not in PolicyFactory.architectures:
+            raise ValueError(f"Unknown architecture '{name}'.\
+                             Available: {list(PolicyFactory.architectures.keys())}")
+        return PolicyFactory.architectures[name](**kwargs)

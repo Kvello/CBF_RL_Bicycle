@@ -3,21 +3,18 @@ import torch.nn as nn
 from typing import List
 from .ff import Ff
 
-class CDFBase(nn.Module):
-    """Base class for different Safety Value Function architectures."""
+class ValueBase(nn.Module):
+    """Base class for different Value Function architectures."""
     def __init__(self):
         super().__init__()
 
     def forward(self, x: torch.Tensor):
         raise NotImplementedError("Forward method must be implemented in subclass")
 
-class FfCDF(CDFBase, Ff):
+class FfValueFunction(ValueBase, Ff):
     """
-    A simple feedforward neural network that represents the value function that is
-    supposed to encode safety. The safety-preserving task structure should be used with this 
-    value function. 
-    This means the value should lie between -1 and 0 for all states.
-    Several NN-parameterizations are possible, but the default is a 2-layer feedforward network
+    A simple feedforward neural network that represents a value function that is
+    Several NN-parameterization are possible, but the default is a 2-layer feedforward network
     with ReLU activations.
     It is reasonable to suspect that the choice of parameterization will affect the
     learned CBF/value function significantly.
@@ -45,7 +42,7 @@ class FfCDF(CDFBase, Ff):
         else:
             return ff
 
-class QuadraticCDF(CDFBase,Ff):
+class QuadraticValueFunction(ValueBase,Ff):
     """
     A quadratic value function that represents the value function that as
     x^T P(x) x, where P is a positive semi-definite matrix P(x)= N^T N, where N is 

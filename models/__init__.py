@@ -1,4 +1,4 @@
-from .factory import CDFFactory
+from .factory import ValueFactory
 
 # Only export the factory class
-__all__ = ["CDFFactory"]
+__all__ = ["ValueFactory", "PolicyFactory"]
