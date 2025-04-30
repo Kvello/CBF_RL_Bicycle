@@ -12,9 +12,9 @@ def test_ff_safety_value_function_shapes():
     input_size = 10
     batch_size = 32
     model = FfCDF(input_size=input_size, 
-                                  layers=[64, 64], 
-                                  activation=nn.ReLU(), 
-                                  bounded=True)
+                                    layers=[64, 64], 
+                                    activation=nn.ReLU(), 
+                                    bounded=True)
     
     x = torch.randn(batch_size, input_size)
     output = model(x)

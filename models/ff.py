@@ -15,11 +15,11 @@ class Ff(nn.Module):
         super().__init__()
         self.layers = nn.Sequential() 
         self.device = device
-        dims = [input_size] +layers 
+        dims = [input_size] +layers[:-1]
         for i in range(len(dims)-1):
             self.layers.add_module(f"layer_{i}",nn.Linear(dims[i],dims[i+1],device=device))
             self.layers.add_module(f"activation_{i}",activation)
-        self.layers.add_module("output",nn.Linear(dims[-1],1,device=device))
+        self.layers.add_module("output",nn.Linear(dims[-1],layers[-1],device=device))
     def forward(self, x:torch.Tensor):
         ff = self.layers(x)
         return ff

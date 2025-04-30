@@ -18,7 +18,7 @@ class FfCDF(CDFBase, Ff):
     value function. 
     This means the value should lie between -1 and 0 for all states.
     Several NN-parameterizations are possible, but the default is a 2-layer feedforward network
-    with tanh activations.
+    with ReLU activations.
     It is reasonable to suspect that the choice of parameterization will affect the
     learned CBF/value function significantly.
     """
@@ -34,11 +34,12 @@ class FfCDF(CDFBase, Ff):
                     device=device,
                     layers=layers,
                     activation=activation)
-        CDFBase.__init__(self)
+        self.layer_sizes = layers
         self.bounded = bounded
         self.eps = eps
     def forward(self, x:torch.Tensor):
         ff = Ff.forward(self,x)
+        ff = nn.Linear(self.layer_sizes[-1],1).to(self.device)(ff)
         if self.bounded:
             return -torch.sigmoid(ff)*(1+self.eps) + self.eps
         else:
@@ -46,7 +47,7 @@ class FfCDF(CDFBase, Ff):
 
 class QuadraticCDF(CDFBase,Ff):
     """
-    A simple quadratic value function that represents the value function that as
+    A quadratic value function that represents the value function that as
     x^T P(x) x, where P is a positive semi-definite matrix P(x)= N^T N, where N is 
     the network output.
     """
@@ -62,14 +63,14 @@ class QuadraticCDF(CDFBase,Ff):
                     device=device,
                     layers=layers,
                     activation=activation)
-        CDFBase.__init__(self)
         self.eps = eps
         self.input_size = input_size
         self.layer_sizes = layers
             
     def forward(self, x:torch.Tensor):
         x_vec = x.unsqueeze(-1)
-        N_x = self.Ff.forward(self,x).reshape(*x.shape[:-1],
+        ff = Ff.forward(self,x)
+        N_x = ff.reshape(*x.shape[:-1],
                                      self.layer_sizes[-1]//self.input_size,
                                      self.input_size)
         P_x = torch.matmul(N_x.transpose(-2,-1),N_x)
