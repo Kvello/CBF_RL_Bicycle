@@ -28,8 +28,7 @@ import warnings
 def gradient_projection(
     common_module:torch.nn.Module,
     primary_loss:torch.Tensor,
-    secondary_loss:torch.Tensor,
-    debug:bool = False)->torch.Tensor:
+    secondary_loss:torch.Tensor)->torch.Tensor:
         r"""Calculates a projected gradient of the secondary loss onto the nullspace
         of the primary loss. Returns the sum of the primary loss gradient and the
         projected secondary loss gradient. I.e
@@ -290,8 +289,7 @@ class HierarchicalPPO(PPO):
         )
         policy_grad = gradient_projection(loss_module.actor_network, 
                             safety_loss, 
-                            secondary_loss,
-                            debug=self.debug)
+                            secondary_loss)
                 # Set gradient to the policy module
         last_param_idx = 0
         for p in loss_module.actor_network.parameters():
