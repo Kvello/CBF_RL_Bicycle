@@ -11,7 +11,7 @@ class ValueBase(nn.Module):
     def forward(self, x: torch.Tensor):
         raise NotImplementedError("Forward method must be implemented in subclass")
 
-class FfValueFunction(ValueBase, Ff):
+class FfValueFunction(ValueBase):
     """
     A simple feedforward neural network that represents a value function that is
     Several NN-parameterization are possible, but the default is a 2-layer feedforward network
@@ -26,23 +26,24 @@ class FfValueFunction(ValueBase, Ff):
                  activation:nn.Module = nn.ReLU(),
                  bounded:bool = True,
                  eps = 1e-2):
-        Ff.__init__(self,
-                    input_size=input_size,
-                    device=device,
-                    layers=layers,
-                    activation=activation)
-        self.layer_sizes = layers
+        super().__init__()
+        feed_forward = Ff(input_size=input_size,
+                            device=device,
+                            layers=layers,
+                            activation=activation)
+        self.net = nn.Sequential()
+        self.net.add_module("Ff",feed_forward)
+        self.net.add_module("output", nn.Linear(layers[-1],1).to(device))
         self.bounded = bounded
         self.eps = eps
     def forward(self, x:torch.Tensor):
-        ff = Ff.forward(self,x)
-        ff = nn.Linear(self.layer_sizes[-1],1).to(self.device)(ff)
+        net_out = self.net(x)
         if self.bounded:
-            return -torch.sigmoid(ff)*(1+self.eps) + self.eps
+            return -torch.sigmoid(net_out)*(1+self.eps) + self.eps
         else:
-            return ff
+            return net_out
 
-class QuadraticValueFunction(ValueBase,Ff):
+class QuadraticValueFunction(ValueBase):
     """
     A quadratic value function that represents the value function that as
     x^T P(x) x, where P is a positive semi-definite matrix P(x)= N^T N, where N is 
@@ -55,18 +56,18 @@ class QuadraticValueFunction(ValueBase,Ff):
                  activation:nn.Module = nn.ReLU(),
                  eps = 1e-2):
         assert layers[-1] % input_size == 0, "Last layer must be a multiple of input size"
-        Ff.__init__(self,
-                    input_size=input_size,
-                    device=device,
-                    layers=layers,
-                    activation=activation)
+        super().__init__()
+        self.feed_forward = Ff(input_size=input_size,
+                            device=device,
+                            layers=layers,
+                            activation=activation)
         self.eps = eps
         self.input_size = input_size
         self.layer_sizes = layers
             
     def forward(self, x:torch.Tensor):
         x_vec = x.unsqueeze(-1)
-        ff = Ff.forward(self,x)
+        ff = self.feed_forward(x_vec)
         N_x = ff.reshape(*x.shape[:-1],
                                      self.layer_sizes[-1]//self.input_size,
                                      self.input_size)

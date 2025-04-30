@@ -4,7 +4,7 @@ from .value import (
     ValueBase,
 )
 from .policy import (
-    Ff,
+    FfPolicy,
     PolicyBase,
 )
 from typing import Type
@@ -27,7 +27,7 @@ class ValueFactory:
 class PolicyFactory:
     """Factory for creating different Policy architectures."""
     architectures = {
-        "feedforward": Ff,
+        "feedforward": FfPolicy,
     }
 
     @staticmethod

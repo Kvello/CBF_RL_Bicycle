@@ -18,14 +18,14 @@ class FfPolicy(PolicyBase):
                  device:torch.device=torch.device("cpu"),
                  layers:List[int] = [64,64],
                  activation:nn.Module = nn.ReLU()):
-        Ff = Ff(self,
-                    input_size=input_size,
-                    device=device,
-                    layers=layers,
-                    activation=activation)
+        super().__init__()
+        feed_forward = Ff(input_size,
+                                device=device,
+                                layers=layers,
+                                activation=activation)
         self.layer_sizes = layers
         self.net = nn.Sequential()
-        self.net.add_module("Ff",Ff)
+        self.net.add_module("Ff",feed_forward)
         self.net.add_module("param_extractor", NormalParamExtractor())
     def forward(self, x:torch.Tensor):
         return self.net(x)
