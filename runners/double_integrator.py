@@ -161,8 +161,8 @@ class DoubleIntegratorRunner(BaseRunner):
     def plot_results(self):
         if self.args == None:
             raise ValueError("Setup the runner before plotting")
-        if self.args.get("plot_CBF") and self.args.get("plot_traj") > 0:
-            print("Plotting CBF")
+        if self.args.get("plot_cdf") and self.args.get("plot_traj") > 0:
+            print("Plotting cdf")
             resolution = 10
             plot_value_function_integrator(self.parameters["max_x1"], 
                                         self.parameters["max_x2"],
