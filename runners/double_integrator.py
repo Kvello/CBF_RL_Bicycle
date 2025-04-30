@@ -1,12 +1,52 @@
 from .base import BaseRunner
-from envs.integrator import MultiObjectiveDoubleIntegratorEnv
+from envs.integrator import( 
+    MultiObjectiveDoubleIntegratorEnv,
+    plot_integrator_trajectories,
+    plot_value_function_integrator
+)
+from models.factory import PolicyFactory, ValueFactory
+
+from tensordict import TensorDict
+from tensordict.nn import TensorDictModule
+from torchrl.modules import ProbabilisticActor, TanhNormal, ValueOperator
+import torch
+from torch import nn
+from torchrl.envs import (
+    Compose,
+    DoubleToFloat,
+    ObservationNorm,
+    StepCounter,
+    TransformedEnv,
+    CatTensors,
+    UnsqueezeTransform,
+)
+from results.evaluate import PolicyEvaluator, calculate_bellman_violation
+from collections import defaultdict
+from datetime import datetime
+import matplotlib.pyplot as plt
+import wandb
+from typing import Dict, Any
+
+
 class DoubleIntegratorRunner(BaseRunner):
-    def setup(self):
-        #######################
-        # Environment:
-        #######################
+    def __init__(self, device:torch.device):
+        super(DoubleIntegratorRunner, self).__init__(device)
+        self.device = device
+        self.env = None
+        self.policy_module = None
+        self.cdf_module = None
+        self.value_module = None
+        self.parameters = None
+        self.evaluator = None
+    def setup(self,args):
+        self.args = args
+        parameters = TensorDict(
+            args["env_params"],
+            batch_size=[],device=self.device
+        )
+        self.parameters = parameters
         base_env = MultiObjectiveDoubleIntegratorEnv(batch_size=args.get("num_parallel_env"),
-                                                    device=device,
+                                                    device=self.device,
                                                     td_params=parameters,
                                                     seed=args["seed"])
         obs_signals = ["x1","x2"]
@@ -22,44 +62,52 @@ class DoubleIntegratorRunner(BaseRunner):
                 CatTensors(in_keys=["obs","ref"], out_key="obs_extended",del_keys=False,dim=-1),
                 DoubleToFloat(),
                 StepCounter(max_steps=args["max_rollout_len"])]
-        env = TransformedEnv(
+        self.env = TransformedEnv(
             base_env,
             Compose(
                 *transforms
             )
-        ).to(device)
-        env.transform[3].init_stats(num_iter=1000,reduce_dim=(0,1),cat_dim=1)
-        env.transform[4].init_stats(num_iter=1000,reduce_dim=(0,1),cat_dim=1)
+        ).to(self.device)
+        self.env.transform[3].init_stats(num_iter=1000,reduce_dim=(0,1),cat_dim=1)
+        self.env.transform[4].init_stats(num_iter=1000,reduce_dim=(0,1),cat_dim=1)
         
         #######################
         # Models:
         #######################
 
 
-        nn_net_config = {
+        cdf_net_config = {
             "name": "feedforward",
             "eps": 1e-2,
             "layers": [64, 64],
             "activation": nn.ReLU(),
-            "device": device,
+            "device": self.device,
             "input_size": len(obs_signals),
             "bounded": True,
         }
-        actor_net = nn.Sequential()
-        layers = [len(ref_signals+obs_signals)] + nn_net_config["layers"] 
-        for i in range(len(layers)-1):
-            actor_net.add_module(f"layer_{i}", nn.Linear(layers[i], layers[i + 1],device=device))
-            actor_net.add_module(f"activation_{i}", nn_net_config["activation"])
-        actor_net.add_module("output", nn.Linear(layers[-1], 2*env.action_spec.shape[-1],device=device))
-        actor_net.add_module("param_extractor", NormalParamExtractor())
-
-
-        policy_module = ProbabilisticActor(
+        value_net_config = {
+            "name": "feedforward",
+            "eps": 1e-2,
+            "layers": [64, 64],
+            "activation": nn.ReLU(),
+            "device": self.device,
+            "input_size": len(obs_signals),
+            "bounded": True,
+        }
+        policy_net_config = {
+            "name": "feedforward",
+            "layers": [64, 64, 2*self.env.action_spec.shape[-1]],
+            "activation": nn.ReLU(),
+            "device": self.device,
+            "input_size": len(ref_signals+obs_signals),
+        }
+        actor_net = PolicyFactory.create(**policy_net_config)
+        self.policy_module = ProbabilisticActor(
             module=TensorDictModule(actor_net,
                                     in_keys=["obs_extended"],
                                     out_keys=["loc", "scale"]),
             in_keys=["loc", "scale"],
-            spec=env.action_spec,
+            spec=self.env.action_spec,
             distribution_class=TanhNormal,
             distribution_kwargs={
                 "low": -parameters["max_input"],
@@ -67,56 +115,87 @@ class DoubleIntegratorRunner(BaseRunner):
             },
             return_log_prob=True,
         )
-        if args.get("load_policy") is not None:
-            policy_module.load_state_dict(torch.load(args.get("load_policy")))
-            print("Policy loaded")
 
-        CDF_net = CDFFactory.create(**nn_net_config)
-        CDF_module = ValueOperator(
-            module=CDF_net,
-            in_keys=["obs"],
-            out_keys=["V1"],
-        )
-        if args.get("load_CBF") is not None:
-            CDF_module.load_state_dict(torch.load(args.get("load_CBF")))
-            print("CBF network loaded") 
-
-        value_net = nn.Sequential()
-        layers = [len(ref_signals+obs_signals)] + nn_net_config["layers"]
-        for i in range(len(layers)-1):
-            value_net.add_module(f"layer_{i}", nn.Linear(layers[i], layers[i + 1],device=device))
-            value_net.add_module(f"activation_{i}", nn_net_config["activation"])
-        value_net.add_module("output", nn.Linear(layers[-1], 1,device=device))
-        value_module = ValueOperator(
+        value_net = ValueFactory.create(**value_net_config)
+        self.value_module = ValueOperator(
             module=value_net,
             in_keys=["obs_extended"],
             out_keys=["V2"]
         )
 
+        cdf_net = ValueFactory.create(**cdf_net_config)
+        self.cdf_module = ValueOperator(
+            module=cdf_net,
+            in_keys=["obs"],
+            out_keys=["V1"],
+        )
+
+        self.evaluator = PolicyEvaluator(env=self.env,
+                                    policy_module=self.policy_module,
+                                    rollout_len=self.args["max_rollout_len"],
+                                    keys_to_log=[self.args.get("primary_reward_key"),
+                                                self.args.get("secondary_reward_key"),
+                                                "step_count"])
         
-
-    def train(self):
-        # Training code specific to the double integrator
-        pass
-
     def evaluate(self):
-        # Evaluation code specific to the double integrator
-        pass
+        if self.args == None:
+            raise ValueError("Setup the runner before evaluating")
+        logs = defaultdict(list)
+        eval_logs = self.evaluator.evaluate_policy()
+        logs.update(eval_logs)
+        if self.args.get("track_bellman_violation",False):
+            bm_viol, *_ = calculate_bellman_violation(
+                self.args.get("bellman_eval_res",10),
+                self.cdf_module,
+                self.args["state_space"],
+                self.policy_module,
+                MultiObjectiveDoubleIntegratorEnv, 
+                self.args.get("gamma"),
+                transforms=self.env.transform[:-1]
+            )
+            logs["bellman_violation_mean"] = bm_viol.flatten().mean().item()
+            logs["bellman_violation_max"] = bm_viol.flatten().max().item()
+            logs["bellman_violation_std"] = bm_viol.flatten().std().item()
+        return logs
 
-    def save(self):
-        # Save code specific to the double integrator
-        pass
-
-    def load(self, 
-             CDF_path:Optional[str]=None, 
-             policy_path:Optional[str]=None, 
-             value_path:Optional[str]=None):
-         if value_path is not None:
-            self.value_module.load_state_dict(torch.load(value_path))
-            print("Value network loaded")       
-        if policy_path is not None:
-            self.policy_module.load_state_dict(torch.load(policy_path))
-            print("Policy loaded")
-        if CDF_path is not None:
-            self.CDF_module.load_state_dict(torch.load(CDF_path))
-            print("CBF network loaded")
+    def plot_results(self):
+        if self.args == None:
+            raise ValueError("Setup the runner before plotting")
+        if self.args.get("plot_CBF") and self.args.get("plot_traj") > 0:
+            print("Plotting CBF")
+            resolution = 10
+            plot_value_function_integrator(self.parameters["max_x1"], 
+                                        self.parameters["max_x2"],
+                                        resolution,
+                                        self.cdf_module,
+                                        transforms=self.env.transform[:-1])
+        if self.args.get("plot_traj") > 0:
+            plot_integrator_trajectories(self.env, 
+                                        self.policy_module,
+                                        self.args["max_rollout_len"],
+                                        self.args.get("plot_traj"),
+                                        self.cdf_module)
+            print("Plotted trajectories")
+        if self.args.get("plot_bellman_violation"):
+            print("Calculating and plotting Bellman violation")
+            bm_viol,mesh = calculate_bellman_violation(10, 
+                                                self.cdf_module,
+                                                self.args["state_space"], 
+                                                self.policy_module,
+                                                MultiObjectiveDoubleIntegratorEnv,
+                                                self.args.get("gamma"),
+                                                transforms=self.env.transform[:-1])
+            X = mesh[0].reshape(bm_viol.shape)
+            Y = mesh[1].reshape(bm_viol.shape)
+            plt.figure(figsize=(10, 10))
+            # Better with contourf, or imshow or maybe surface plot or pcolormesh
+            plt.contourf(X,Y,bm_viol,cmap="coolwarm")
+            plt.colorbar()
+            plt.title("Bellman violation")
+            plt.xlabel("x1")
+            plt.ylabel("x2")
+            if wandb.run is not None:
+                wandb.log({"bellman_violation": wandb.Image(plt)})
+            else:
+                plt.savefig("results/ppo_safe_integrator_bellman_violation" +\
+                    datetime.now().strftime("%Y%m%d-%H%M%S") + ".pdf")
