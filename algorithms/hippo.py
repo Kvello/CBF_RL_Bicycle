@@ -147,16 +147,6 @@ class HierarchicalPPO(PPO):
         }
         self.reward_keys = {self.primary_reward_key, self.secondary_reward_key}
 
-        self.debug = config.get("debug", False)
-
-        warn_str = "gradient_scaler not found in config, using default value of None"
-        self.gradient_normalization = get_config_value(config, "gradient_normalization",None,warn_str)
-        if self.gradient_normalization is not None:
-            self.gradient_normalization = NormalizerFactory.create(self.gradient_normalization,
-                                                                   **config.get("gradient_normalization_kwargs", {}))
-        else:
-            self.gradient_normalization = lambda x: x
-
     def train(self,
               policy_module: TensorDictModule,
               V_primary: TensorDictModule,
@@ -242,7 +232,6 @@ class HierarchicalPPO(PPO):
         print("Training with config:")
         print(self.config)
         logs = defaultdict(list)
-        eval_logs = defaultdict(list)
         pbar = tqdm(total=total_frames)
         for i, tensordict_data in enumerate(collector):
             logs.update(self.step(tensordict_data,
