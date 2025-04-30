@@ -91,7 +91,7 @@ class DoubleIntegratorRunner(BaseRunner):
             "layers": [64, 64],
             "activation": nn.ReLU(),
             "device": self.device,
-            "input_size": len(obs_signals),
+            "input_size": len(obs_signals+ref_signals),
             "bounded": True,
         }
         policy_net_config = {
