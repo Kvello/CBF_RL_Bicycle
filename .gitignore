@@ -8,3 +8,4 @@ models/weights/*
 wandb/
 *.pdf
 *.png
+.vscode/
