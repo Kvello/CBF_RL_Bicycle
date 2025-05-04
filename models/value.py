@@ -67,7 +67,7 @@ class QuadraticValueFunction(ValueBase):
             
     def forward(self, x:torch.Tensor):
         x_vec = x.unsqueeze(-1)
-        ff = self.feed_forward(x_vec)
+        ff = self.feed_forward(x)
         N_x = ff.reshape(*x.shape[:-1],
                                      self.layer_sizes[-1]//self.input_size,
                                      self.input_size)
