@@ -52,7 +52,7 @@ def test_safe_double_integrator_env_multi_step(env):
 def test_cost_and_reset(env):
     td = env.reset()
     obs_spec = env.observation_spec
-    params = env.parameters
+    params = env.params
     td["x1"] = torch.tensor(0.0,dtype=torch.float32)
     td["x2"] = params["max_x2"] + 0.01
     td["action"] = params["max_input"].clone().detach()

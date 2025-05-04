@@ -52,7 +52,7 @@ def test_reward_values(env):
     td = env.reset()
     obs_spec = env.observation_spec
     x1 = torch.tensor(0.0,dtype=torch.float32)
-    params = env.parameters
+    params = env.params
     td["x1"] = x1
     td["reference_index"] = torch.tensor(0,dtype=torch.int32)
     td["y1_ref"] = torch.tensor(0.0,dtype=torch.float32)
