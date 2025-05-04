@@ -86,7 +86,7 @@ def test_reward_values(env):
         y2_ref = A_ref*2*torch.pi*f_ref*torch.cos(f_ref * n*2*torch.pi*dt)
         Y = torch.stack([y1_ref,y2_ref],dim=0)
         assert td["next","r1"] == 0.0, "The reward for the primary objective should be zero"
-        assert torch.allclose(td["next","r2"],torch.linalg.vector_norm(Y,dim=0,ord=2),atol=1e-6)
+        assert torch.allclose(-td["next","r2"],torch.linalg.vector_norm(Y,dim=0,ord=2),atol=1e-6)
         td = step_mdp(td)
         td["action"] = torch.tensor(0.0,dtype=torch.float32)
     
