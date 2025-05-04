@@ -97,7 +97,7 @@ class Runner():
         default_params = {
             "max_input": float("inf"),
         }
-        self.parameters = get_config_value(args["env"]["cfg"], "params", default_params, warn_str) 
+        self.params = get_config_value(args["env"]["cfg"], "params", default_params, warn_str) 
 
         obs_signals = args["env"]["cfg"]["obs_signals"]
         ref_signals = args["env"]["cfg"]["ref_signals"]
@@ -167,8 +167,8 @@ class Runner():
             spec=self.env.action_spec,
             distribution_class=TanhNormal,
             distribution_kwargs={
-                "low": -self.parameters["max_input"],
-                "high": self.parameters["max_input"],
+                "low": -self.params["max_input"],
+                "high": self.params["max_input"],
             },
             return_log_prob=True,
         )
@@ -203,8 +203,8 @@ class Runner():
         if plotting_args.get("cdf",False):
             print("Plotting cdf")
             resolution = 10
-            plot_value_function_integrator(self.parameters["max_x1"], 
-                                        self.parameters["max_x2"],
+            plot_value_function_integrator(self.params["max_x1"], 
+                                        self.params["max_x2"],
                                         resolution,
                                         self.cdf_module,
                                         transforms=self.env.transform[:-1])
