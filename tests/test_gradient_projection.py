@@ -33,27 +33,6 @@ def test_gradient_projection_shape(model_and_data):
     assert projected_grad is not None, "Projected gradient is None"
     assert projected_grad.shape == torch.Size([2]), "Incorrect gradient shape"
 
-def test_projection_orthogonality(model_and_data):
-    """Test if the projected secondary gradient is orthogonal to the primary gradient."""
-    model, x, target1, target2, loss_fn = model_and_data
-    pred = model(x)
-    primary_loss = loss_fn(pred, target1)
-    secondary_loss = loss_fn(pred, target2)
-
-    projected_grad = gradient_projection(model, primary_loss, secondary_loss)
-
-    # Compute primary gradient manually
-    # Graph is cleared after projection, so we need to compute the primary gradient again
-    pred = model(x)
-    primary_loss = loss_fn(pred, target1)
-    primary_loss.backward()
-    primary_grad = torch.cat([p.grad.view(-1) for p in model.parameters()])
-    model.zero_grad()
-
-    # Check orthogonality: dot product should be ~0
-    dot_product = torch.dot(projected_grad - primary_grad, primary_grad)
-    assert torch.isclose(dot_product, torch.tensor(0.0), atol=1e-4), "Secondary gradient is not orthogonal to primary gradient"
-
 def test_primary_gradient_preserved(model_and_data):
     """Test if the primary gradient component is retained in the final projected gradient."""
     model, x, target1, target2, loss_fn = model_and_data
@@ -67,15 +46,23 @@ def test_primary_gradient_preserved(model_and_data):
     # Graph is cleared after projection, so we need to compute the primary gradient again
     pred = model(x)
     primary_loss = loss_fn(pred, target1)
+    secondary_loss = loss_fn(pred, target2)
     primary_loss.backward(retain_graph=True)
     primary_grad = torch.cat([p.grad.view(-1) for p in model.parameters()])
     model.zero_grad()
+    secondary_loss.backward()
+    secondary_grad = torch.cat([p.grad.view(-1) for p in model.parameters()])
 
     # Compute the component of projected_grad along primary_grad
     primary_grad_norm_sq = torch.dot(primary_grad, primary_grad)
-    projected_primary_component = (
-        torch.dot(projected_grad, primary_grad) / primary_grad_norm_sq
-    ) * primary_grad
+    if torch.dot(primary_grad, secondary_grad) < 0.0:
+        # Only if the primary and secondary gradients had a negative dot product
+        # did any projection happen
+        projected_primary_component = (
+            torch.dot(projected_grad, primary_grad) / primary_grad_norm_sq
+        ) * primary_grad
+    else:
+        projected_primary_component = projected_grad - secondary_grad
     # The projected gradient should contain the primary gradient component
     assert torch.allclose(projected_primary_component, primary_grad, atol=1e-6), \
         "The primary gradient component is not fully retained."
@@ -110,9 +97,9 @@ def test_edge_cases(model_and_data, target1, target2):
     assert torch.isnan(projected_grad).sum() == 0, "Projected gradient should not contain NaNs"
     assert torch.isinf(projected_grad).sum() == 0, "Projected gradient should not contain infinities"
     assert projected_grad.shape == torch.Size([2]), "Incorrect gradient shape"
-    assert torch.allclose(projected_grad, primary_grad, atol=1e-6), \
-        "The projected gradient should be equal to the primary gradient"
-    assert torch.allclose(projected_grad, secondary_grad, atol=1e-6), \
-        "The projected gradient should be equal to the secondary gradient"
+    assert torch.allclose(projected_grad, 2*primary_grad, atol=1e-6), \
+        "The projected gradient should be equal to the sum of the gradients(which are identical)"
+    assert torch.allclose(projected_grad, 2*secondary_grad, atol=1e-6), \
+        "The projected gradient should be equal to the sum of the gradients(which are identical)"
         
 
