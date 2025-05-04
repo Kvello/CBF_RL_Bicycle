@@ -3,18 +3,18 @@ import torch.nn as nn
 import pytest
 from typing import List
 from models.value import (
-    FfSafetyValueFunction, 
-    QuadraticSafetyValueFunction, 
+    FfValueFunction, 
+    QuadraticValueFunction, 
 )
-from models.factory import SafetyValueFunctionFactory
+from models.factory import ValueFactory
 
 def test_ff_safety_value_function_shapes():
     input_size = 10
     batch_size = 32
-    model = FfSafetyValueFunction(input_size=input_size, 
-                                  layers=[64, 64], 
-                                  activation=nn.ReLU(), 
-                                  bounded=True)
+    model = FfValueFunction(input_size=input_size, 
+                                    layers=[64, 64], 
+                                    activation=nn.ReLU(), 
+                                    bounded=True)
     
     x = torch.randn(batch_size, input_size)
     output = model(x)
@@ -26,7 +26,7 @@ def test_ff_safety_value_function_shapes():
 def test_ff_safety_value_function_unbounded():
     input_size = 10
     batch_size = 5
-    model = FfSafetyValueFunction(input_size=input_size, layers=[64, 64], activation=nn.ReLU(), bounded=False)
+    model = FfValueFunction(input_size=input_size, layers=[64, 64], activation=nn.ReLU(), bounded=False)
     x = torch.randn(batch_size, input_size)
     output = model(x)
     assert output.shape == (batch_size, 1), "Unbounded feedforward network \
@@ -36,7 +36,7 @@ def test_quadratic_safety_value_function_shapes():
     input_size = 10
     batch_size = 32
     layers = [20, 20]  # Ensure last layer is a multiple of input_size
-    model = QuadraticSafetyValueFunction(input_size=input_size, 
+    model = QuadraticValueFunction(input_size=input_size, 
                                          layers=layers, 
                                          activation=nn.ReLU())
     
@@ -48,7 +48,7 @@ def test_quadratic_safety_value_function_shapes():
 def test_quadratic_safety_value_function_psd():
     input_size = 5
     batch_size = 5
-    model = QuadraticSafetyValueFunction(input_size=input_size, 
+    model = QuadraticValueFunction(input_size=input_size, 
                                          layers=[10], 
                                          activation=nn.ReLU(),
                                          eps=0.0)
@@ -71,9 +71,9 @@ def test_factory_creation():
         "device": device,
         "bounded": True
     } 
-    ff_model = SafetyValueFunctionFactory.create("feedforward",
+    ff_model = ValueFactory.create("feedforward",
                                                     **config_ff)
-    assert isinstance(ff_model, FfSafetyValueFunction), "Factory did not create\
+    assert isinstance(ff_model, FfValueFunction), "Factory did not create\
         correct feedforward model"
 
     config_quad = {
@@ -82,16 +82,16 @@ def test_factory_creation():
         "activation": activation,
         "device": device
     }
-    quad_model = SafetyValueFunctionFactory.create("quadratic",
+    quad_model = ValueFactory.create("quadratic",
                                                     **config_quad)
 
-    assert isinstance(quad_model, QuadraticSafetyValueFunction), "Factory did not \
+    assert isinstance(quad_model, QuadraticValueFunction), "Factory did not \
         create correct quadratic model"
 
 def test_factory_invalid_architecture():
     config_invalid = {}
     with pytest.raises(ValueError, match="Unknown architecture"):
-        SafetyValueFunctionFactory.create("invalid_arch",
+        ValueFactory.create("invalid_arch",
                                             **config_invalid)
 
 if __name__ == "__main__":
