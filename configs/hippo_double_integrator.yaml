@@ -1,0 +1,91 @@
+# double_integrator.yaml
+
+env:
+  name: double_integrator
+  gamma: 0.95
+  # These arguments are passed to the environment constructor
+  cfg:
+    obs_signals: ["x1", "x2"]
+    ref_signals: ["y1_ref", "y2_ref"]
+    max_steps: 32
+    num_parallel_env: 128   # can compute this dynamically if you prefer
+    params:
+      dt: 0.05
+      max_x1: 1.0
+      max_x2: 1.0
+      max_input: 1.0
+      reference_amplitude: 1.1
+      reference_frequency: 0.1
+
+models:
+  cdf_net:
+    name: feedforward
+    eps: 1.0e-2
+    layers: [64, 64]
+    activation: relu  # specify as string; your code maps to nn.ReLU()
+    bounded: true
+
+  value_net:
+    name: feedforward
+    eps: 1.0e-2
+    layers: [64, 64]
+    activation: relu
+    bounded: true
+
+  policy_net:
+    name: feedforward
+    layers: [64, 64, 2] # Last layer should be 2 times the action space
+    activation: relu
+
+algorithm:
+  num_epochs: 10
+  frames_per_batch: 4096   # 2**12
+  sub_batch_size: 256      # 2**8
+  max_grad_norm: 1.0
+  total_frames: 262144     # 2**18
+  clip_epsilon: 0.2
+  lmbda1: 0.1
+  lmbda2: 0.95
+  critic_coef: 1.0
+  supervision_coef: 1.0
+  collision_buffer_size: 4096  # same as frames_per_batch
+  primary_reward_key: r1
+  secondary_reward_key: r2
+  entropy_coef: 0.001
+  loss_critic_type: smooth_l1
+  optim:
+    lr: 5.0e-5
+
+
+plot:
+  num_traj: 32
+  max_steps: 32
+  bellman_violation: true
+  cdf: true
+  bellman_eval_res: 100
+
+  state_space:
+    x1:
+      low: -1.0 
+      high: 1.0
+    x2:
+      low: -1.0
+      high: 1.0
+
+evaluation:
+  num_eval_episodes: 32 #TODO
+  freq: 1000 #TODO
+  max_steps: 32
+  render: false #TODO
+  render_mode: human #TODO
+  track_bellman_violation: true
+  bellman_eval_res: 10
+  state_space:
+    x1:
+      low: -1.0
+      high: 1.0
+    x2:
+      low: -1.0
+      high: 1.0
+
+seed: 0

@@ -189,13 +189,6 @@ class HierarchicalPPO(PPO):
         if V_primary.out_keys[0] == V_secondary.out_keys[0]:
             warnings.warn("Value networks have the same output keys. This may cause issues.")
             
-        if self.config.get("track", False):
-            wandb.init(project=self.config.get("wandb_project", "ppo"),
-                    sync_tensorboard=True,
-                    monitor_gym=True,
-                    save_code=True,
-                    name=self.config.get("experiment_name", None),
-                    config = {**self.config,"method":"hippo"})
             
         self.loss_module = HiPPOLoss(
             actor=policy_module,
@@ -241,7 +234,7 @@ class HierarchicalPPO(PPO):
                                    eval_func=eval_func))
             pbar.update(tensordict_data.numel())
             # scheduler.step()
-            if self.config.get("track", False):
+            if wandb.run is not None:
                 wandb.log({**logs})
             else:
                 cum_primary_reward_str = \

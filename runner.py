@@ -21,11 +21,13 @@ from torchrl.envs import (
 from torchrl.modules import ProbabilisticActor, TanhNormal, ValueOperator
 from tensordict.nn import TensorDictModule
 from tensordict import TensorDict
+from utils.utils import get_config_value
 from collections import defaultdict
 from datetime import datetime
 import matplotlib.pyplot as plt
 import wandb
 import argparse
+import yaml
 from envs.integrator import(
     plot_integrator_trajectories,
     plot_value_function_integrator
@@ -33,6 +35,15 @@ from envs.integrator import(
 from envs import make_env
 from models.factory import PolicyFactory, ValueFactory
 
+ACTIVATION_MAP = {
+    "relu": nn.ReLU(),
+    "tanh": nn.Tanh(),
+    "sigmoid": nn.Sigmoid(),
+    "leaky_relu": nn.LeakyReLU(),
+    "elu": nn.ELU(),
+    "selu": nn.SELU(),
+    "gelu": nn.GELU(),
+}
 class Runner():
     def __init__(self, device):
         self.device = device
@@ -45,20 +56,25 @@ class Runner():
         if self.args == None:
             raise ValueError("Setup the runner before training")
         ppo_entity = HiPPO()
-        ppo_entity.setup(self.args)
+        HiPPO_args = args["algorithm"]
+        HiPPO_args["device"] = self.device
+        HiPPO_args["gamma"] = self.args["env"]["gamma"]
+        HiPPO_args["track"] = self.args.get("track",False)
+        ppo_entity.setup(HiPPO_args)
         print("Training...")
-        if self.args.get("train"):
+
+        if self.args.get("train",False):
             collector = SyncDataCollector(
                 create_env_fn=self.env,
                 policy=self.policy_module,
-                frames_per_batch=self.args["frames_per_batch"],
-                total_frames=self.args["total_frames"],
+                frames_per_batch=HiPPO_args["frames_per_batch"],
+                total_frames=HiPPO_args["total_frames"],
                 split_trajs=False,
                 device=self.device,
                 exploration_type=ExplorationType.RANDOM)
 
             replay_buffer = TensorDictReplayBuffer(
-                storage=LazyTensorStorage(max_size=self.args["frames_per_batch"]),
+                storage=LazyTensorStorage(max_size=HiPPO_args["frames_per_batch"]),
                 sampler=SamplerWithoutReplacement(),
             )
             optim = torch.optim.Adam
@@ -77,15 +93,15 @@ class Runner():
 
     def setup(self,args):
         self.args = args
-        parameters = TensorDict(
-            args["env_params"],
-            batch_size=[],device=self.device
-        )
-        self.parameters = parameters
+        warn_str = "Warning: max_input not set in env_params. Defaulting to infinity"
+        default_params = {
+            "max_input": float("inf"),
+        }
+        self.parameters = get_config_value(args["env"]["cfg"], "params", default_params, warn_str) 
 
-        obs_signals = args["env_cfg","obs_signals"]
-        ref_signals = args["env_cfg","ref_signals"]
-        base_env = make_env(args["env_name"], args["env_cfg"], self.device)
+        obs_signals = args["env"]["cfg"]["obs_signals"]
+        ref_signals = args["env"]["cfg"]["ref_signals"]
+        base_env = make_env(args["env"]["name"], args["env"]["cfg"], self.device)
         transforms = [
                 UnsqueezeTransform(in_keys=obs_signals+ref_signals, 
                                 dim=-1,
@@ -96,7 +112,7 @@ class Runner():
                 ObservationNorm(in_keys=["ref"], out_keys=["ref"]),
                 CatTensors(in_keys=["obs","ref"], out_key="obs_extended",del_keys=False,dim=-1),
                 DoubleToFloat(),
-                StepCounter(max_steps=args["max_rollout_len"])]
+                StepCounter(max_steps=args["env"]["cfg"]["max_steps"])]
         self.env = TransformedEnv(
             base_env,
             Compose(
@@ -111,31 +127,37 @@ class Runner():
         #######################
 
 
+        cdf_net_config = args["models"]["cdf_net"]
+        print("CDF net config: ", cdf_net_config)
         cdf_net_config = {
-            "name": "feedforward",
-            "eps": 1e-2,
-            "layers": [64, 64],
-            "activation": nn.ReLU(),
+            "name": cdf_net_config["name"],
+            "eps": cdf_net_config.get("eps", 0.0),
+            "bounded": cdf_net_config.get("bounded", False),
+            "layers": cdf_net_config["layers"],
+            "activation": ACTIVATION_MAP[cdf_net_config["activation"]],
             "device": self.device,
-            "input_size": len(obs_signals),
-            "bounded": True,
+            "input_size": len(obs_signals), #Operating under the assumption that the cdd
+            # function only depends on the state, not on any reference signals
         }
+        value_net_config = args["models"]["value_net"]
         value_net_config = {
-            "name": "feedforward",
-            "eps": 1e-2,
-            "layers": [64, 64],
-            "activation": nn.ReLU(),
+            "name": value_net_config["name"],
+            "eps": value_net_config.get("eps", 0.0),
+            "bounded": value_net_config.get("bounded", False),
+            "layers": value_net_config["layers"],
+            "activation": ACTIVATION_MAP[value_net_config["activation"]],
             "device": self.device,
-            "input_size": len(obs_signals+ref_signals),
-            "bounded": True,
-        }
+            "input_size": len(ref_signals+obs_signals),
+        } 
+        policy_net_config = args["models"]["policy_net"]
         policy_net_config = {
-            "name": "feedforward",
-            "layers": [64, 64, 2*self.env.action_spec.shape[-1]],
-            "activation": nn.ReLU(),
+            "name": policy_net_config["name"],
+            "layers": policy_net_config["layers"],
+            "activation": ACTIVATION_MAP[policy_net_config["activation"]],
             "device": self.device,
             "input_size": len(ref_signals+obs_signals),
         }
+            
         actor_net = PolicyFactory.create(**policy_net_config)
         self.policy_module = ProbabilisticActor(
             module=TensorDictModule(actor_net,
@@ -145,8 +167,8 @@ class Runner():
             spec=self.env.action_spec,
             distribution_class=TanhNormal,
             distribution_kwargs={
-                "low": -parameters["max_input"],
-                "high": parameters["max_input"],
+                "low": -self.parameters["max_input"],
+                "high": self.parameters["max_input"],
             },
             return_log_prob=True,
         )
@@ -167,17 +189,18 @@ class Runner():
 
         self.evaluator = PolicyEvaluator(env=self.env,
                                     policy_module=self.policy_module,
-                                    rollout_len=self.args["max_rollout_len"],
-                                    keys_to_log=[self.args.get("primary_reward_key"),
-                                                self.args.get("secondary_reward_key"),
+                                    rollout_len=self.args["evaluation"]["max_steps"],
+                                    keys_to_log=[self.args["algorithm"]["primary_reward_key"],
+                                                self.args["algorithm"]["secondary_reward_key"],
                                                 "step_count"])
         
     def plot_results(self):
-        assert self.args["env_name"] == "double_integrator", \
+        assert self.args["env"]["name"] == "double_integrator", \
             "Plotting is currently only implemented for the double integrator env"
         if self.args == None:
             raise ValueError("Setup the runner before plotting")
-        if self.args.get("plot_cdf") and self.args.get("plot_traj") > 0:
+        plotting_args = self.args.get("plot", {})
+        if plotting_args.get("cdf",False):
             print("Plotting cdf")
             resolution = 10
             plot_value_function_integrator(self.parameters["max_x1"], 
@@ -185,21 +208,21 @@ class Runner():
                                         resolution,
                                         self.cdf_module,
                                         transforms=self.env.transform[:-1])
-        if self.args.get("plot_traj") > 0:
+        if plotting_args.get("num_traj",0) > 0:
             plot_integrator_trajectories(self.env, 
                                         self.policy_module,
-                                        self.args["max_rollout_len"],
-                                        self.args.get("plot_traj"),
+                                        plotting_args["max_steps"],
+                                        plotting_args[ "plot_traj" ],
                                         self.cdf_module)
             print("Plotted trajectories")
-        if self.args.get("plot_bellman_violation"):
+        if plotting_args.get("bellman_violation",False):
             print("Calculating and plotting Bellman violation")
             bm_viol,mesh = calculate_bellman_violation(10, 
                                                 self.cdf_module,
-                                                self.args["state_space"], 
+                                                plotting_args["state_space"], 
                                                 self.policy_module,
                                                 self.env_maker,
-                                                self.args.get("gamma"),
+                                                self.args["env"]["gamma"],
                                                 transforms=self.env.transform[:-1])
             X = mesh[0].reshape(bm_viol.shape)
             Y = mesh[1].reshape(bm_viol.shape)
@@ -218,17 +241,18 @@ class Runner():
     def evaluate(self):
         if self.args == None:
             raise ValueError("Setup the runner before evaluating")
+        eval_args = self.args.get("evaluation", {})
         logs = defaultdict(list)
         eval_logs = self.evaluator.evaluate_policy()
         logs.update(eval_logs)
-        if self.args.get("track_bellman_violation",False):
+        if eval_args.get("track_bellman_violation",False):
             bm_viol, *_ = calculate_bellman_violation(
-                self.args.get("bellman_eval_res",10),
+                eval_args.get("bellman_eval_res",10),
                 self.cdf_module,
-                self.args["state_space"],
+                eval_args["state_space"],
                 self.policy_module,
                 self.env_maker, 
-                self.args.get("gamma"),
+                self.args["env"]["gamma"],
                 transforms=self.env.transform[:-1]
             )
             logs["bellman_violation_mean"] = bm_viol.flatten().mean().item()
@@ -265,9 +289,9 @@ class Runner():
             print("CDF network loaded")
     # Bellman violation uses a custom env with a different batch size
     def env_maker(self, batch_size:int, device:Optional[torch.device]=None):
-        env_cfg = self.args["env_cfg"]
+        env_cfg = self.args["env"]["cfg"]
         env_cfg["num_parallel_env"] = batch_size
-        return make_env(self.args["env_name"], env_cfg, device=device)
+        return make_env(self.args["env"]["name"], env_cfg, device=device)
 
         
 
@@ -291,18 +315,16 @@ def parse_args()->Dict[str,Any]:
     parser.add_argument("--eval", action="store_true", default=False, help="Evaluate the model (after training)") 
     parser.add_argument("--save", action="store_true", default=False, help="Save the models")
     parser.add_argument("--track", action="store_true", default=False, help="Track the training with wandb")
-    parser.add_argument("--wandb_project", type=str, default="ppo_safe_integrator", help="Wandb project name")
+    parser.add_argument("--wandb_project", type=str, default="hippo", help="Wandb project name")
     parser.add_argument("--experiment_name", type=str, default=None, help="Wandb experiment name")
-    parser.add_argument("--seed", type=int, default=0, help="Random seed")
     parser.add_argument("--plot", action="store_true", default=False, help="Plot the results")
+    parser.add_argument("--config", type=str, default="configs/hippo_double_integrator.yaml", help="Path to config file(yaml)")
     return vars(parser.parse_args())
     
 if __name__ == "__main__":
     args = parse_args() 
-
-    # Set seed
-        
-    args["seed"] = 0
+    with open(args["config"], "r") as f:
+        args.update(yaml.safe_load(f))
     torch.manual_seed(args["seed"])
     #######################
     # Parallelization:
@@ -315,51 +337,10 @@ if __name__ == "__main__":
         else torch.device("cpu")
     )
 
-    #######################
-    # Arguments:
-    #######################
-
-    args["env_params"] = {
-        "dt": 0.05,
-        "max_x1": 1.0,
-        "max_x2": 1.0,
-        "max_input": 1.0,
-        "reference_amplitude": 1.1,
-        "reference_frequency": 0.1, # rule of thumb: < max_u/(2*pi*sqrt(A))
-    }
-    args["gamma"] = 0.95
-    args["plot_traj"] = 32
-    args["max_rollout_len"] = 32
-    args["plot_bellman_violation"] = True 
-    args["plot_cdf"] = True
-    args["track_bellman_violation"] = True
-    
-    args["num_epochs"] = 10 # optimization steps per batch of data collected
-    args["frames_per_batch"] = int(2**12)
-    args["sub_batch_size"] = int(2**8)
-    args["max_grad_norm"] = 1.0
-    args["total_frames"] = int(2**18)
     args["device"] = device
-    args["clip_epsilon"] = 0.2
-    args["lmbda1"] = 0.1
-    args["lmbda2"] = 0.95
-    args["critic_coef"] = 1.0
-    args["supervision_coef"] = 1.0
-    args["collision_buffer_size"] = args["frames_per_batch"]
-    args["loss_critic_type"] = "smooth_l1"
-    args["optim_kwargs"] = {"lr": 5e-5}
-    args["bellman_eval_res"] = 10 #Resolution of grid over state space used for calculating Bellman violation
-    args["state_space"] = {
-        "x1": {"low": -args["env_params"]["max_x1"],
-                "high": args["env_params"]["max_x1"]},
-        "x2": {"low": -args["env_params"]["max_x2"],
-                "high": args["env_params"]["max_x2"]}
-    }
-    args["primary_reward_key"] = "r1"
-    args["secondary_reward_key"] = "r2"
-    args["entropy_coef"] = 0.001
-    args["num_parallel_env"] = int(args["frames_per_batch"] / (args["max_rollout_len"]))
 
+    args["env"]["cfg"]["device"] = device
+    args["env"]["cfg"]["seed"] = args["seed"]
     runner = Runner(device=device)
     runner.setup(args)
     if args.get("cdf_path") is not None:
@@ -369,6 +350,13 @@ if __name__ == "__main__":
     if args.get("value_path") is not None:
         runner.load(value_path=args["value_path"])
     if args.get("train", False): 
+        if args.get("track", False):
+            wandb.init(project=args.get("wandb_project", "hippo"),
+                    sync_tensorboard=True,
+                    monitor_gym=True,
+                    save_code=True,
+                    name=args.get("experiment_name", None),
+                    config = {**args,"method":"hippo"})
         runner.train()
     if args.get("save", False):
         cdf_path = "double_integrator_cdf" + datetime.strftime("%Y%m%d-%H%M%S") + ".pt"
