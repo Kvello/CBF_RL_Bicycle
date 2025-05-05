@@ -53,7 +53,7 @@ algorithm:
   secondary_reward_key: r2
   entropy_coef: 0.001
   loss_critic_type: smooth_l1
-  optim:
+  optim_kwargs:
     lr: 5.0e-5
 
 
