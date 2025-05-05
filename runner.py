@@ -56,10 +56,9 @@ class Runner():
         if self.args == None:
             raise ValueError("Setup the runner before training")
         ppo_entity = HiPPO()
-        HiPPO_args = args["algorithm"]
+        HiPPO_args = self.args["algorithm"]
         HiPPO_args["device"] = self.device
         HiPPO_args["gamma"] = self.args["env"]["gamma"]
-        HiPPO_args["track"] = self.args.get("track",False)
         ppo_entity.setup(HiPPO_args)
         print("Training...")
 
@@ -93,7 +92,7 @@ class Runner():
 
     def setup(self,args):
         self.args = args
-        warn_str = "Warning: max_input not set in env_params. Defaulting to infinity"
+        warn_str = "Warning: max_input not set in env params. Defaulting to infinity"
         default_params = {
             "max_input": float("inf"),
         }
