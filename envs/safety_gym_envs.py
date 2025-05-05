@@ -8,17 +8,17 @@ from torchrl.data.tensor_specs import (
 )
 from typing import Optional
 
+#TODO: num_envs=None is not supported yet
 class SafetyGymEnv(EnvBase):
     batch_locked = True
     def __init__(
         self,
         env_name: str,
-        device:Optional[torch.device]=None,
+        device:Optional[torch.device]=torch.device("cpu"),
         num_envs: Optional[int] = None,
     ):
         super().__init__(device=device)
         self._env = custom_GymEnv(env_name, device=device, num_envs=num_envs)
-        self.device = device
         if num_envs is not None:
             self.batch_size = [num_envs]
         else:
