@@ -71,6 +71,13 @@ class PPO(RLAlgoBase):
         warn_str = "supervision_coef not found in config, using default value of 1.0"
         self.supervision_coef = get_config_value(config, "supervision_coef", 1.0, warn_str)
 
+        warn_str = "optim_kwargs not found in config, using default value of {}"
+        self.optim_kwargs = get_config_value(config, "optim_kwargs", {}, warn_str)
+
+        warn_str = "safety_obs_key not found in config, using default value of 'observation'"
+        self.safety_obs_key = get_config_value(config, "safety_obs_key", "observation", warn_str)
+        
+        
         self.loss_value_log_keys = ["loss_safety_objective",
                                     "loss_CDF", 
                                     "loss_safety_entropy",
@@ -200,16 +207,16 @@ class PPO(RLAlgoBase):
         Args:
             td (TensorDict): The data tensor dictionary.
         """
-        states = td["obs"]
+        states = td[self.safety_obs_key]
         collision_indcs = torch.where(
-            td["next", "reward"] <0.0
+            td["next", self.primary_reward_key] <0.0
         )[:-1]
         collision_states = states[collision_indcs]
         if collision_states.shape[0] == 0:
             # No collision states to add
             return
         value_target_collision_states = (
-            td["next","reward"][td["next","reward"] < 0.0]
+            td["next",self.primary_reward_key][td["next",self.primary_reward_key] < 0.0]
         ).unsqueeze(-1)
         new_states = TensorDict({
             "collision_states": collision_states,

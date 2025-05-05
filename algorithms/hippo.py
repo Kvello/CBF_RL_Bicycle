@@ -138,6 +138,9 @@ class HierarchicalPPO(PPO):
         warn_str = "optim_kwargs not found in config, using default value of {}"
         self.optim_kwargs = get_config_value(config, "optim_kwargs", {}, warn_str)
 
+        warn_str = "safety_obs_key not found in config, using default value of 'observation'"
+        self.safety_obs_key = get_config_value(config, "safety_obs_key", "observation", warn_str)
+
         self.loss_value_log_keys = {
             "loss_safety_objective",
             "loss_secondary_objective",
