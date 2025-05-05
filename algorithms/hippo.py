@@ -98,7 +98,7 @@ class HierarchicalPPO(PPO):
         self.max_grad_norm = get_config_value(config, "max_grad_norm", 1.0)
         
         warn_str = "device not found in config, using default value of 'cpu'"
-        self.device = get_config_value(config, "device", "cpu", warn_str)
+        self.device = get_config_value(config, "device", torch.device("cpu"), warn_str)
 
         warn_str = "clip_epsilon not found in config, using default value of 0.2"
         self.clip_epsilon = get_config_value(config, "clip_epsilon", 0.2, warn_str)
@@ -134,6 +134,9 @@ class HierarchicalPPO(PPO):
                                                       warn_str)
         warn_str = "supervision_coef not found in config, using default value of 1.0"
         self.supervision_coef = get_config_value(config, "supervision_coef", 1.0, warn_str)
+
+        warn_str = "optim_kwargs not found in config, using default value of {}"
+        self.optim_kwargs = get_config_value(config, "optim_kwargs", {}, warn_str)
 
         self.loss_value_log_keys = {
             "loss_safety_objective",
@@ -214,7 +217,7 @@ class HierarchicalPPO(PPO):
             list(policy_module.parameters()) + 
             list(V_primary.parameters()) +
             list(V_secondary.parameters()),
-            **self.config.get("optim_kwargs", {})
+            **self.optim_kwargs
         )
         self.collision_buffer = ReplayBuffer(
             storage=LazyTensorStorage(max_size = self.collision_buffer_size,
