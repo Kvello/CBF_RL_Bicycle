@@ -186,7 +186,7 @@ class Runner():
 
         self.evaluator = PolicyEvaluator(env=self.env,
                                     policy_module=self.policy_module,
-                                    rollout_len=self.args["evaluation"]["max_steps"],
+                                    rollout_len=self.args["env"]["cfg"]["max_steps"],
                                     keys_to_log=[self.args["algorithm"]["primary_reward_key"],
                                                 self.args["algorithm"]["secondary_reward_key"],
                                                 "step_count"])
@@ -197,6 +197,7 @@ class Runner():
         if self.args == None:
             raise ValueError("Setup the runner before plotting")
         plotting_args = self.args.get("plot", {})
+        plotting_args["max_steps"] = self.args["env"]["cfg"]["max_steps"]
         if plotting_args.get("cdf",False):
             print("Plotting cdf")
             resolution = 10

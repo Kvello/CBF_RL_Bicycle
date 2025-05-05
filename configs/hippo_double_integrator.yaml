@@ -7,8 +7,8 @@ env:
   cfg:
     obs_signals: ["x1", "x2"]
     ref_signals: ["y1_ref", "y2_ref"]
-    max_steps: 32
-    num_parallel_env: 128   # can compute this dynamically if you prefer
+    max_steps: 64
+    num_parallel_env: 64  #frames_per_batch / max_steps
     params:
       dt: 0.05
       max_x1: 1.0
@@ -40,7 +40,7 @@ algorithm:
   frames_per_batch: 4096   # 2**12
   sub_batch_size: 256      # 2**8
   max_grad_norm: 1.0
-  total_frames: 1048576     # 2**20
+  total_frames: 4194304     # 2**22
   clip_epsilon: 0.2
   lmbda1: 0.1
   lmbda2: 0.95
@@ -52,12 +52,11 @@ algorithm:
   entropy_coef: 0.001
   loss_critic_type: smooth_l1
   optim_kwargs:
-    lr: 1.0e-4
+    lr: 5.0e-5
 
 
 plot:
   num_trajs: 32
-  max_steps: 32
   bellman_violation: true
   cdf: true
   bellman_eval_res: 100
@@ -73,7 +72,6 @@ plot:
 evaluation:
   num_eval_episodes: 32 #TODO
   freq: 1000 #TODO
-  max_steps: 32
   render: false #TODO
   render_mode: human #TODO
   track_bellman_violation: true
