@@ -17,7 +17,7 @@ class FfValueFunction(ValueBase):
     Several NN-parameterization are possible, but the default is a 2-layer feedforward network
     with ReLU activations.
     It is reasonable to suspect that the choice of parameterization will affect the
-    learned CBF/value function significantly.
+    learned CDF/value function significantly.
     """
     def __init__(self,
                  input_size:int,

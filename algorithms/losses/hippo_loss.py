@@ -70,8 +70,8 @@ class HiPPOLoss(LossModule):
         if self._out_keys is None:
             keys = ["loss_safety_objective",
                     "loss_secondary_objective",
-                    "loss_CBF",
-                    "loss_CBF_supervised"
+                    "loss_CDF",
+                    "loss_CDF_supervised"
                     "loss_secondary_critic",
                     "loss_safety_entropy",
                     "loss_secondary_entropy"]
@@ -88,21 +88,21 @@ class HiPPOLoss(LossModule):
 
         if "collision_states" in tensordict:
             collision_states = tensordict["collision_states"]
-            CBF_collision_pred = self.primary_critic.module(collision_states)
-            supervised_CBF_loss = (
+            CDF_collision_pred = self.primary_critic.module(collision_states)
+            supervised_CDF_loss = (
                 torch.nn.MSELoss(reduction="mean")(
-                    CBF_collision_pred,
+                    CDF_collision_pred,
                     tensordict["collision_value"],
                 )
             )*self.supervision_coef
         else:
-            supervised_CBF_loss = torch.tensor(0.0, device=tensordict.device)
+            supervised_CDF_loss = torch.tensor(0.0, device=tensordict.device)
         td_out = TensorDict(
             {
                 "loss_safety_objective": primary_loss_vals["loss_objective"],
                 "loss_secondary_objective": secondary_loss_vals["loss_objective"],
-                "loss_CBF": primary_loss_vals["loss_critic"],
-                "loss_CBF_supervised": supervised_CBF_loss,
+                "loss_CDF": primary_loss_vals["loss_critic"],
+                "loss_CDF_supervised": supervised_CDF_loss,
                 "loss_secondary_critic": secondary_loss_vals["loss_critic"],
                 "loss_safety_entropy": primary_loss_vals["loss_entropy"],
                 "loss_secondary_entropy": secondary_loss_vals["loss_entropy"],

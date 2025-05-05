@@ -141,8 +141,8 @@ class HierarchicalPPO(PPO):
         self.loss_value_log_keys = {
             "loss_safety_objective",
             "loss_secondary_objective",
-            "loss_CBF",
-            "loss_CBF_supervised",
+            "loss_CDF",
+            "loss_CDF_supervised",
             "loss_secondary_critic",
             "loss_safety_entropy",
             "loss_secondary_entropy",
@@ -272,9 +272,9 @@ class HierarchicalPPO(PPO):
          
         loss_vals = loss_module(tensordict)
         critic_loss = (
-            loss_vals["loss_CBF"] +
+            loss_vals["loss_CDF"] +
             loss_vals["loss_secondary_critic"] +
-            loss_vals["loss_CBF_supervised"]
+            loss_vals["loss_CDF_supervised"]
         )
         critic_loss.backward()
         safety_loss = (

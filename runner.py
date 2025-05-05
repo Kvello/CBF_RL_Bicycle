@@ -308,7 +308,7 @@ def parse_args()->Dict[str,Any]:
     parser = argparse.ArgumentParser(description="PPO for Safe Double Integrator")
     parser.add_argument("--load_policy", type=str, default=None, help="Path to load policy")
     parser.add_argument("--load_value", type=str, default=None, help="Path to load value")
-    parser.add_argument("--load_cdf", type=str, default=None, help="Path to load CBF")
+    parser.add_argument("--load_cdf", type=str, default=None, help="Path to load CDF")
     parser.add_argument("--train", action="store_true", default=False, help="Train the model")
     parser.add_argument("--eval", action="store_true", default=False, help="Evaluate the model (after training)") 
     parser.add_argument("--save", action="store_true", default=False, help="Save the models")

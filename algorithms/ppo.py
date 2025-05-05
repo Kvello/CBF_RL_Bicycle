@@ -72,9 +72,9 @@ class PPO(RLAlgoBase):
         self.supervision_coef = get_config_value(config, "supervision_coef", 1.0, warn_str)
 
         self.loss_value_log_keys = ["loss_safety_objective",
-                                    "loss_CBF", 
+                                    "loss_CDF", 
                                     "loss_safety_entropy",
-                                    "loss_CBF_supervised",]
+                                    "loss_CDF_supervised",]
         self.reward_keys = {self.primary_reward_key, self.secondary_reward_key}
     def train(self,
               policy_module: TensorDictModule,
@@ -290,7 +290,7 @@ class PPO(RLAlgoBase):
         """
         loss_vals = loss_module(tensordict)
         # rename loss value keys
-        loss_vals["loss_CBF"] = loss_vals["loss_critic"]
+        loss_vals["loss_CDF"] = loss_vals["loss_critic"]
         loss_vals["loss_safety_objective"] = loss_vals["loss_objective"]
         loss_vals["loss_safety_entropy"] = loss_vals["loss_entropy"]
         del loss_vals["loss_critic"]
@@ -302,21 +302,21 @@ class PPO(RLAlgoBase):
             # Handle the case where the collision buffer is empty
             # (Only in the beginning of training)
             unsafe_states = tensordict["collision_states"]
-            unsafe_CBF_prediction = loss_module.critic_network.module(unsafe_states)
+            unsafe_CDF_prediction = loss_module.critic_network.module(unsafe_states)
             target_unsafe_value = unsafe_states["collision_value"] # This will nominally be -1
-            loss_vals["loss_CBF_supervised"] = (
+            loss_vals["loss_CDF_supervised"] = (
                 torch.nn.MSELoss(reduction='mean')(
-                    unsafe_CBF_prediction,
+                    unsafe_CDF_prediction,
                     target_unsafe_value,
                 )
             )*self.supervision_coef
         else:
-            loss_vals["loss_CBF_supervised"] = torch.tensor(0.0).to(self.device)
+            loss_vals["loss_CDF_supervised"] = torch.tensor(0.0).to(self.device)
         loss_value = (
             loss_vals["loss_safety_objective"]
-            + loss_vals["loss_CBF"]
+            + loss_vals["loss_CDF"]
             + loss_vals["loss_safety_entropy"]
-            + loss_vals["loss_CBF_supervised"]
+            + loss_vals["loss_CDF_supervised"]
         )
         
         loss_value.backward()
