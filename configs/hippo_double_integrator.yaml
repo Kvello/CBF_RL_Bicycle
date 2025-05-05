@@ -40,7 +40,7 @@ algorithm:
   frames_per_batch: 4096   # 2**12
   sub_batch_size: 256      # 2**8
   max_grad_norm: 1.0
-  total_frames: 4194304     # 2**22
+  total_frames: 524288     # 2**19
   clip_epsilon: 0.2
   lmbda1: 0.1
   lmbda2: 0.95
