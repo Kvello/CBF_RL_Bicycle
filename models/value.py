@@ -21,11 +21,10 @@ class FfValueFunction(ValueBase):
     """
     def __init__(self,
                  input_size:int,
+                 eps:float,
                  device:torch.device=torch.device("cpu"),
                  layers:List[int] = [64,64],
-                 activation:nn.Module = nn.ReLU(),
-                 bounded:bool = True,
-                 eps = 1e-2):
+                 activation:nn.Module = nn.ReLU()):
         super().__init__()
         feed_forward = Ff(input_size=input_size,
                             device=device,
@@ -34,8 +33,8 @@ class FfValueFunction(ValueBase):
         self.net = nn.Sequential()
         self.net.add_module("Ff",feed_forward)
         self.net.add_module("output", nn.Linear(layers[-1],1).to(device))
-        self.bounded = bounded
         self.eps = eps
+        self.bounded = bool(self.eps)
     def forward(self, x:torch.Tensor):
         net_out = self.net(x)
         if self.bounded:

@@ -131,7 +131,6 @@ class Runner():
         cdf_net_config = {
             "name": cdf_net_config["name"],
             "eps": cdf_net_config.get("eps", 0.0),
-            "bounded": cdf_net_config.get("bounded", False),
             "layers": cdf_net_config["layers"],
             "activation": ACTIVATION_MAP[cdf_net_config["activation"]],
             "device": self.device,
@@ -142,7 +141,6 @@ class Runner():
         value_net_config = {
             "name": value_net_config["name"],
             "eps": value_net_config.get("eps", 0.0),
-            "bounded": value_net_config.get("bounded", False),
             "layers": value_net_config["layers"],
             "activation": ACTIVATION_MAP[value_net_config["activation"]],
             "device": self.device,

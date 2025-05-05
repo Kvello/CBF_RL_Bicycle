@@ -14,7 +14,7 @@ def test_ff_safety_value_function_shapes():
     model = FfValueFunction(input_size=input_size, 
                                     layers=[64, 64], 
                                     activation=nn.ReLU(), 
-                                    bounded=True)
+                                    eps=1e-2)
     
     x = torch.randn(batch_size, input_size)
     output = model(x)
@@ -26,7 +26,7 @@ def test_ff_safety_value_function_shapes():
 def test_ff_safety_value_function_unbounded():
     input_size = 10
     batch_size = 5
-    model = FfValueFunction(input_size=input_size, layers=[64, 64], activation=nn.ReLU(), bounded=False)
+    model = FfValueFunction(input_size=input_size, layers=[64, 64], activation=nn.ReLU(), eps=0.0)
     x = torch.randn(batch_size, input_size)
     output = model(x)
     assert output.shape == (batch_size, 1), "Unbounded feedforward network \
@@ -69,7 +69,7 @@ def test_factory_creation():
         "layers": layers,
         "activation": activation,
         "device": device,
-        "bounded": True
+        "eps": 1e-2,
     } 
     ff_model = ValueFactory.create("feedforward",
                                                     **config_ff)

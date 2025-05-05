@@ -23,14 +23,12 @@ models:
     eps: 1.0e-2
     layers: [64, 64]
     activation: relu  # specify as string; your code maps to nn.ReLU()
-    bounded: true
 
   value_net:
     name: feedforward
-    eps: 1.0e-2
+    eps: 0.0
     layers: [64, 64]
     activation: relu
-    bounded: true
 
   policy_net:
     name: feedforward
