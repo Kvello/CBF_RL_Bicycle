@@ -59,6 +59,7 @@ class Runner():
         HiPPO_args = self.args["algorithm"]
         HiPPO_args["device"] = self.device
         HiPPO_args["gamma"] = self.args["env"]["gamma"]
+        HiPPO_args["safety_obs_key"] = self.args["env"]["cfg"]["safety_obs_key"]
         ppo_entity.setup(HiPPO_args)
         print("Training...")
 
@@ -98,34 +99,17 @@ class Runner():
         }
         self.params = get_config_value(args["env"]["cfg"], "params", default_params, warn_str) 
 
-        obs_signals = args["env"]["cfg"]["obs_signals"]
-        ref_signals = args["env"]["cfg"]["ref_signals"]
-        base_env = make_env(args["env"]["name"], args["env"]["cfg"], self.device)
-        transforms = [
-                UnsqueezeTransform(in_keys=obs_signals+ref_signals, 
-                                dim=-1,
-                                in_keys_inv=obs_signals+ref_signals,),
-                CatTensors(in_keys=obs_signals, out_key= "obs",del_keys=False,dim=-1),
-                CatTensors(in_keys=ref_signals, out_key= "ref",del_keys=False,dim=-1),
-                ObservationNorm(in_keys=["obs"], out_keys=["obs"]),
-                ObservationNorm(in_keys=["ref"], out_keys=["ref"]),
-                CatTensors(in_keys=["obs","ref"], out_key="obs_extended",del_keys=False,dim=-1),
-                DoubleToFloat(),
-                StepCounter(max_steps=args["env"]["cfg"]["max_steps"])]
-        self.env = TransformedEnv(
-            base_env,
-            Compose(
-                *transforms
-            )
-        ).to(self.device)
-        self.env.transform[3].init_stats(num_iter=1000,reduce_dim=(0,1),cat_dim=1)
-        self.env.transform[4].init_stats(num_iter=1000,reduce_dim=(0,1),cat_dim=1)
+        self.env = make_env(args["env"]["name"], args["env"]["cfg"], self.device)
         
         #######################
         # Models:
         #######################
 
 
+        full_obs_key = args["env"]["cfg"]["full_obs_key"]
+        safety_obs_key = args["env"]["cfg"]["safety_obs_key"] 
+        full_obs_size = self.env.observation_spec[full_obs_key].shape[-1]
+        safety_obs_size = self.env.observation_spec[safety_obs_key].shape[-1]
         cdf_net_config = args["models"]["cdf_net"]
         print("CDF net config: ", cdf_net_config)
         cdf_net_config = {
@@ -134,7 +118,7 @@ class Runner():
             "layers": cdf_net_config["layers"],
             "activation": ACTIVATION_MAP[cdf_net_config["activation"]],
             "device": self.device,
-            "input_size": len(obs_signals), #Operating under the assumption that the cdd
+            "input_size": safety_obs_size, #Operating under the assumption that the cdd
             # function only depends on the state, not on any reference signals
         }
         value_net_config = args["models"]["value_net"]
@@ -144,7 +128,7 @@ class Runner():
             "layers": value_net_config["layers"],
             "activation": ACTIVATION_MAP[value_net_config["activation"]],
             "device": self.device,
-            "input_size": len(ref_signals+obs_signals),
+            "input_size": full_obs_size,
         } 
         policy_net_config = args["models"]["policy_net"]
         policy_net_config = {
@@ -152,13 +136,14 @@ class Runner():
             "layers": policy_net_config["layers"],
             "activation": ACTIVATION_MAP[policy_net_config["activation"]],
             "device": self.device,
-            "input_size": len(ref_signals+obs_signals),
+            "input_size": full_obs_size,
+            "action_size": self.env.action_spec.shape[-1],
         }
             
         actor_net = PolicyFactory.create(**policy_net_config)
         self.policy_module = ProbabilisticActor(
             module=TensorDictModule(actor_net,
-                                    in_keys=["obs_extended"],
+                                    in_keys=[full_obs_key],
                                     out_keys=["loc", "scale"]),
             in_keys=["loc", "scale"],
             spec=self.env.action_spec,
@@ -173,14 +158,14 @@ class Runner():
         value_net = ValueFactory.create(**value_net_config)
         self.value_module = ValueOperator(
             module=value_net,
-            in_keys=["obs_extended"],
+            in_keys=[full_obs_key],
             out_keys=["V2"]
         )
 
         cdf_net = ValueFactory.create(**cdf_net_config)
         self.cdf_module = ValueOperator(
             module=cdf_net,
-            in_keys=["obs"],
+            in_keys=[safety_obs_key],
             out_keys=["V1"],
         )
 
