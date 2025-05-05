@@ -1,0 +1,58 @@
+# double_integrator.yaml
+
+env:
+  name: Safexp-PointGoal1-v0
+  gamma: 0.95
+  # These arguments are passed to the environment constructor
+  cfg:
+    full_obs_key: "observation"
+    safety_obs_key: "observation"
+    max_steps: 64
+    num_parallel_env: 8  #<=frames_per_batch / max_steps
+    params:
+      max_input: 1.0
+models:
+  cdf_net:
+    name: feedforward
+    eps: 1.0e-3
+    layers: [64, 64]
+    activation: relu  # specify as string; your code maps to nn.ReLU()
+
+  value_net:
+    name: feedforward
+    eps: 0.0
+    layers: [64, 64]
+    activation: relu
+
+  policy_net:
+    name: feedforward
+    layers: [64, 64] 
+    activation: relu
+
+algorithm:
+  num_epochs: 10
+  frames_per_batch: 4096   # 2**12
+  sub_batch_size: 256      # 2**8
+  max_grad_norm: 1.0
+  total_frames: 4194304     # 2**22
+  clip_epsilon: 0.2
+  lmbda1: 0.1
+  lmbda2: 0.95
+  critic_coef: 1.0
+  supervision_coef: 1.0
+  collision_buffer_size: 4096  # same as frames_per_batch
+  primary_reward_key: neg_cost
+  secondary_reward_key: reward
+  entropy_coef: 0.001
+  loss_critic_type: smooth_l1
+  optim_kwargs:
+    lr: 5.0e-5
+
+evaluation:
+  num_eval_episodes: 32 #TODO
+  freq: 1000 #TODO
+  render: false #TODO
+  render_mode: human #TODO
+  track_bellman_violation: false
+
+seed: 2
