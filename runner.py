@@ -207,11 +207,11 @@ class Runner():
                                         resolution,
                                         self.cdf_module,
                                         transforms=self.env.transform[:-1])
-        if plotting_args.get("num_traj",0) > 0:
+        if plotting_args.get("num_trajs",0) > 0:
             plot_integrator_trajectories(self.env, 
                                         self.policy_module,
                                         plotting_args["max_steps"],
-                                        plotting_args[ "plot_traj" ],
+                                        plotting_args["num_trajs"],
                                         self.cdf_module)
             print("Plotted trajectories")
         if plotting_args.get("bellman_violation",False):

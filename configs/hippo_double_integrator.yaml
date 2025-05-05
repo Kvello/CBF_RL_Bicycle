@@ -58,7 +58,7 @@ algorithm:
 
 
 plot:
-  num_traj: 32
+  num_trajs: 32
   max_steps: 32
   bellman_violation: true
   cdf: true
