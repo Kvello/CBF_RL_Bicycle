@@ -220,11 +220,11 @@ class Runner():
              value_path:Optional[str]=None):
         if self.args is None:
             raise ValueError("Setup the runner before saving")
-        if cdf_path is None:
+        if cdf_path is not None:
             torch.save(self.cdf_module.state_dict(), cdf_path)
-        if policy_path is None:
+        if policy_path is not None:
             torch.save(self.policy_module.state_dict(),policy_path)
-        if value_path is None:
+        if value_path is not None:
             torch.save(self.value_module.state_dict(), value_path)
         print("Models saved")
     def load(self, 
