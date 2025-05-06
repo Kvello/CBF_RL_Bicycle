@@ -51,8 +51,6 @@ algorithm:
 evaluation:
   num_eval_episodes: 32 #TODO
   freq: 1000 #TODO
-  render: false #TODO
-  render_mode: human #TODO
   track_bellman_violation: false
 
 render:
