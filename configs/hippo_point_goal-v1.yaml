@@ -2,7 +2,7 @@
 
 env:
   name: Safexp-PointGoal1-v0
-  gamma: 0.95
+  gamma: 0.98
   # These arguments are passed to the environment constructor
   cfg:
     full_obs_key: "observation"
@@ -15,38 +15,38 @@ models:
   cdf_net:
     name: feedforward
     eps: 1.0e-3
-    layers: [64, 64]
-    activation: relu  # specify as string; your code maps to nn.ReLU()
+    layers: [128, 64, 32]
+    activation: relu 
 
   value_net:
     name: feedforward
     eps: 0.0
-    layers: [64, 64]
+    layers: [128, 64, 32]
     activation: relu
 
   policy_net:
     name: feedforward
-    layers: [64, 64] 
+    layers: [128, 64, 32] 
     activation: relu
 
 algorithm:
   num_epochs: 10
-  frames_per_batch: 16384   # 2**14
+  frames_per_batch: 8192   # 2**13
   sub_batch_size: 256      # 2**8
   max_grad_norm: 1.0
-  total_frames: 4194304     # 2**22
+  total_frames: 8388608     # 2**23
   clip_epsilon: 0.2
   lmbda1: 0.1
   lmbda2: 0.95
   critic_coef: 1.0
   supervision_coef: 1.0
-  collision_buffer_size: 4096  # same as frames_per_batch
+  collision_buffer_size: 16384  # same as frames_per_batch
   primary_reward_key: neg_cost
   secondary_reward_key: reward
   entropy_coef: 0.001
   loss_critic_type: smooth_l1
   optim_kwargs:
-    lr: 5.0e-5
+    lr: 1.0e-5
 
 evaluation:
   num_eval_episodes: 32 #TODO
