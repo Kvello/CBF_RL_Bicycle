@@ -113,6 +113,11 @@ class custom_terminal_obs_reader(default_info_dict_reader):
             # to torchrl specs. As such, we can simply stack the tuple and set it
             # at the relevant index (assuming stacking can be achieved)
             tensor[index] = torch.as_tensor(obs, device=tensor.device)
+        elif isinstance(obs, np.ndarray):
+            # if the obs is a np.ndarray, we expect that the key points also to
+            # a value in the obs. We retrieve this value and write it in the
+            # tensor
+            tensor[index] = torch.as_tensor(obs, device=tensor.device)
         else:
             raise NotImplementedError(
                 f"Observations of type {type(obs)} are not supported yet."
