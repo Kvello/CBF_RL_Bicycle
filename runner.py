@@ -342,9 +342,10 @@ if __name__ == "__main__":
                     config = {**args,"method":"hippo"})
         runner.train()
     if args.get("save", False):
-        cdf_path = "double_integrator_cdf" + datetime.strftime("%Y%m%d-%H%M%S") + ".pt"
-        policy_path = "double_integrator_policy" + datetime.strftime("%Y%m%d-%H%M%S") + ".pt"
-        value_path = "double_integrator_value" + datetime.strftime("%Y%m%d-%H%M%S") + ".pt"
+        env_name = args["env"]["name"]
+        cdf_path = env_name + "_cdf" + datetime.strftime("%Y%m%d-%H%M%S") + ".pt"
+        policy_path = env_name + "_policy" + datetime.strftime("%Y%m%d-%H%M%S") + ".pt"
+        value_path = env_name + "_value" + datetime.strftime("%Y%m%d-%H%M%S") + ".pt"
         runner.save(cdf_path=cdf_path,
                     policy_path=policy_path,
                     value_path=value_path) 
