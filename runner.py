@@ -377,9 +377,9 @@ if __name__ == "__main__":
     if args.get("save", False):
         env_name = args["env"]["name"]
         now = datetime.now().strftime("%Y%m%d-%H%M%S")
-        cdf_path ="models/" + env_name + "_cdf" + now + ".pt"
-        policy_path ="models/" + env_name + "_policy" + now + ".pt"
-        value_path ="models/" + env_name + "_value" + now + ".pt"
+        cdf_path ="models/" + env_name + "_cdf_" + now + ".pt"
+        policy_path ="models/" + env_name + "_policy_" + now + ".pt"
+        value_path ="models/" + env_name + "_value_" + now + ".pt"
         runner.save(cdf_path=cdf_path,
                     policy_path=policy_path,
                     value_path=value_path) 
