@@ -75,7 +75,8 @@ class Runner():
                 total_frames=HiPPO_args["total_frames"],
                 split_trajs=False,
                 device=self.device,
-                exploration_type=ExplorationType.RANDOM)
+                exploration_type=ExplorationType.RANDOM,
+                reset_at_each_iter=True)
 
             replay_buffer = TensorDictReplayBuffer(
                 storage=LazyTensorStorage(max_size=HiPPO_args["frames_per_batch"]),
