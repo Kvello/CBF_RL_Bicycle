@@ -252,7 +252,7 @@ class Runner():
         plotting_args["max_steps"] = self.args["env"]["cfg"]["max_steps"]
         if plotting_args.get("cdf",False):
             print("Plotting cdf")
-            resolution = 10
+            resolution = plotting_args.get("resolution", 100)
             plot_value_function_integrator(self.params["max_x1"], 
                                         self.params["max_x2"],
                                         resolution,
