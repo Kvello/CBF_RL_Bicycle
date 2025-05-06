@@ -65,8 +65,7 @@ class Runner():
         HiPPO_args["gamma"] = self.args["env"]["gamma"]
         HiPPO_args["safety_obs_key"] = self.args["env"]["cfg"]["safety_obs_key"]
         ppo_entity.setup(HiPPO_args)
-        print("Training...")
-
+        print("Training with config: ",self.args)
         if self.args.get("train",False):
             collector = SyncDataCollector(
                 create_env_fn=self.env,
@@ -268,7 +267,7 @@ class Runner():
             print("Plotted trajectories")
         if plotting_args.get("bellman_violation",False):
             print("Calculating and plotting Bellman violation")
-            bm_viol,mesh = calculate_bellman_violation(10, 
+            bm_viol,mesh = calculate_bellman_violation(plotting_args["bellman_eval_res"], 
                                                 self.cdf_module,
                                                 plotting_args["state_space"], 
                                                 self.policy_module,
