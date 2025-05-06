@@ -42,9 +42,14 @@ class SafetyGymEnv(EnvBase):
         },out.batch_size, device=self.device)
         # The method assumes that the environment is reset if a constraint is violated
         out["done"] = out["done"] | (out["neg_cost"] < 0)
+        out["terminated"] = out["terminated"] | (out["neg_cost"] < 0)
+        # Re-step the vector transform of GymEnv as we have terminated the env externally
+        # and the transform needs to be updated as it has internal state
+        self._env.transform._step(tensordict,out)
         return out
     def _reset(self, tensordict: TensorDict) -> TensorDict:
-        out = self._env._reset(tensordict)
+        print(self._env.transform._memo)
+        out = self._env.reset(tensordict)
         return out
     def _set_seed(self, seed: int) -> None:
         self._env.set_seed(seed)
