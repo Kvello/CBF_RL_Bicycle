@@ -34,6 +34,10 @@ from envs.integrator import(
 )
 from envs import make_env
 from models.factory import PolicyFactory, ValueFactory
+from torchrl.envs import GymEnv
+import safety_gym
+from torchrl.envs.utils import step_mdp
+import time
 
 ACTIVATION_MAP = {
     "relu": nn.ReLU(),
@@ -176,51 +180,19 @@ class Runner():
                                                 self.args["algorithm"]["secondary_reward_key"],
                                                 "step_count"])
         
-    def plot_results(self):
-        assert self.args["env"]["name"] == "double_integrator", \
-            "Plotting is currently only implemented for the double integrator env"
+    def visualize_results(self):
+        """
+        Visualize the results of the training.
+        This takes different forms depending on the environment.
+        """
         if self.args == None:
             raise ValueError("Setup the runner before plotting")
-        plotting_args = self.args.get("plot", {})
-        plotting_args["max_steps"] = self.args["env"]["cfg"]["max_steps"]
-        if plotting_args.get("cdf",False):
-            print("Plotting cdf")
-            resolution = 10
-            plot_value_function_integrator(self.params["max_x1"], 
-                                        self.params["max_x2"],
-                                        resolution,
-                                        self.cdf_module,
-                                        transforms=self.env.transform[:-1])
-        if plotting_args.get("num_trajs",0) > 0:
-            plot_integrator_trajectories(self.env, 
-                                        self.policy_module,
-                                        plotting_args["max_steps"],
-                                        plotting_args["num_trajs"],
-                                        self.cdf_module)
-            print("Plotted trajectories")
-        if plotting_args.get("bellman_violation",False):
-            print("Calculating and plotting Bellman violation")
-            bm_viol,mesh = calculate_bellman_violation(10, 
-                                                self.cdf_module,
-                                                plotting_args["state_space"], 
-                                                self.policy_module,
-                                                self.env_maker,
-                                                self.args["env"]["gamma"],
-                                                transforms=self.env.transform[:-1])
-            X = mesh[0].reshape(bm_viol.shape)
-            Y = mesh[1].reshape(bm_viol.shape)
-            plt.figure(figsize=(10, 10))
-            # Better with contourf, or imshow or maybe surface plot or pcolormesh
-            plt.contourf(X,Y,bm_viol,cmap="coolwarm")
-            plt.colorbar()
-            plt.title("Bellman violation")
-            plt.xlabel("x1")
-            plt.ylabel("x2")
-            if wandb.run is not None:
-                wandb.log({"bellman_violation": wandb.Image(plt)})
-            else:
-                plt.savefig("results/ppo_safe_integrator_bellman_violation" +\
-                    datetime.now().strftime("%Y%m%d-%H%M%S") + ".pdf")
+        if self.args["env"]["name"] == "double_integrator": 
+            self.plot_integrator_results()
+        elif self.args["env"]["name"].startswith("Safexp"):
+            self.render_safety_gym_results()
+        else:
+            raise ValueError("No visualization method for this environment")
     def evaluate(self):
         if self.args == None:
             raise ValueError("Setup the runner before evaluating")
@@ -276,7 +248,68 @@ class Runner():
         env_cfg["num_parallel_env"] = batch_size
         return make_env(self.args["env"]["name"], env_cfg, device=device)
 
-        
+    def plot_integrator_results(self):
+        plotting_args = self.args.get("plot", {})
+        plotting_args["max_steps"] = self.args["env"]["cfg"]["max_steps"]
+        if plotting_args.get("cdf",False):
+            print("Plotting cdf")
+            resolution = 10
+            plot_value_function_integrator(self.params["max_x1"], 
+                                        self.params["max_x2"],
+                                        resolution,
+                                        self.cdf_module,
+                                        transforms=self.env.transform[:-1])
+        if plotting_args.get("num_trajs",0) > 0:
+            plot_integrator_trajectories(self.env, 
+                                        self.policy_module,
+                                        plotting_args["max_steps"],
+                                        plotting_args["num_trajs"],
+                                        self.cdf_module)
+            print("Plotted trajectories")
+        if plotting_args.get("bellman_violation",False):
+            print("Calculating and plotting Bellman violation")
+            bm_viol,mesh = calculate_bellman_violation(10, 
+                                                self.cdf_module,
+                                                plotting_args["state_space"], 
+                                                self.policy_module,
+                                                self.env_maker,
+                                                self.args["env"]["gamma"],
+                                                transforms=self.env.transform[:-1])
+            X = mesh[0].reshape(bm_viol.shape)
+            Y = mesh[1].reshape(bm_viol.shape)
+            plt.figure(figsize=(10, 10))
+            # Better with contourf, or imshow or maybe surface plot or pcolormesh
+            plt.contourf(X,Y,bm_viol,cmap="coolwarm")
+            plt.colorbar()
+            plt.title("Bellman violation")
+            plt.xlabel("x1")
+            plt.ylabel("x2")
+            if wandb.run is not None:
+                wandb.log({"bellman_violation": wandb.Image(plt)})
+            else:
+                plt.savefig("results/ppo_safe_integrator_bellman_violation" +\
+                    datetime.now().strftime("%Y%m%d-%H%M%S") + ".pdf")
+            
+    def render_safety_gym_results(self):
+        render_args = self.args.get("render", {})
+        if render_args.get("render", False):
+        # rendering only works with unbatched GymEnvs
+            env = GymEnv(self.args["env"]["name"],device=self.device)
+            env.seed(self.args["env"]["cfg"]["seed"])
+            td = env.reset()
+            dt = 1.0/render_args.get("fps",60)
+            for _ in range(render_args["num_frames"]):
+                time.sleep(dt)
+                env.render()
+                with torch.no_grad():
+                    td = self.policy_module(td)
+                td = env.step(td)
+                td = step_mdp(td)
+                done = td["done"].any()
+                if done:
+                    td = env.reset()
+            env.close()
+                
 
 multiprocessing.set_start_method("spawn", force=True)
 is_fork = multiprocessing.get_start_method(allow_none=True) == "fork"
@@ -300,7 +333,7 @@ def parse_args()->Dict[str,Any]:
     parser.add_argument("--track", action="store_true", default=False, help="Track the training with wandb")
     parser.add_argument("--wandb_project", type=str, default="hippo", help="Wandb project name")
     parser.add_argument("--experiment_name", type=str, default=None, help="Wandb experiment name")
-    parser.add_argument("--plot", action="store_true", default=False, help="Plot the results")
+    parser.add_argument("--visualize", action="store_true", default=False, help="Visualize the results")
     parser.add_argument("--config", type=str, default="configs/hippo_double_integrator.yaml", help="Path to config file(yaml)")
     return vars(parser.parse_args())
     
@@ -352,8 +385,8 @@ if __name__ == "__main__":
     if args.get("eval", False):
         logs = runner.evaluate()
         print("Evaluation logs: ", logs)
-    if args.get("plot", False):
-        runner.plot_results()
+    if args.get("visualize", False):
+        runner.visualize_results()
     
     if wandb.run is not None:
         wandb.finish()
