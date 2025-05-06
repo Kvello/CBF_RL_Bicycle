@@ -40,6 +40,8 @@ class SafetyGymEnv(EnvBase):
         out = TensorDict({
             key:out[key] for key in out_keys
         },out.batch_size, device=self.device)
+        # The method assumes that the environment is reset if a constraint is violated
+        out["done"] = out["done"] | (out["neg_cost"] < 0)
         return out
     def _reset(self, tensordict: TensorDict) -> TensorDict:
         out = self._env._reset(tensordict)
