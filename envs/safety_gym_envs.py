@@ -60,7 +60,7 @@ class SafetyGymEnv(EnvBase):
                 "done": torch.from_numpy(done).to(self.device),
                 "terminated": torch.zeros_like(torch.from_numpy(done)).to(self.device),
                 "truncated": torch.zeros_like(torch.from_numpy(done)).to(self.device),
-                "neg_cost": torch.from_numpy(neg_cost).to(self.device),
+                "neg_cost": neg_cost.to(self.device),
             },
             batch_size=self.batch_size,
             device=self.device,
