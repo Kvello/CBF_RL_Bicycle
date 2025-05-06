@@ -29,7 +29,7 @@ class FfPolicy(PolicyBase):
         self.net = nn.Sequential()
         self.net.add_module("Ff",feed_forward)
         self.net.add_module("activation", activation)
-        self.net.add_module("output_layer", nn.Linear(layers[-1], action_size,device=self.device))
+        self.net.add_module("output_layer", nn.Linear(layers[-1], action_size*2,device=self.device))
         self.net.add_module("param_extractor", NormalParamExtractor())
     def forward(self, x:torch.Tensor):
         return self.net(x)
