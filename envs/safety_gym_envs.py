@@ -14,15 +14,13 @@ class SafetyGymEnv(EnvBase):
     def __init__(
         self,
         env_name: str,
+        num_envs: int,
         device:Optional[torch.device]=torch.device("cpu"),
-        num_envs: Optional[int] = None,
     ):
         super().__init__(device=device)
+        assert num_envs > 0, "num_envs must be greater than 0. SafetyGymEnv does not support unbatched envs"
         self._env = custom_GymEnv(env_name, device=device, num_envs=num_envs)
-        if num_envs is not None:
-            self.batch_size = [num_envs]
-        else:
-            self.batch_size = []
+        self.batch_size = [num_envs]
         self._make_specs()
     def _step(self, tensordict: TensorDict) -> TensorDict:
         # Call the base class step
