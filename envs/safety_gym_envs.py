@@ -16,7 +16,7 @@ from torchrl.envs.libs.gym import _gym_to_torchrl_spec_transform
 #TODO: num_envs=None is not supported yet
 class SafetyGymEnv(EnvBase):
     # We can safely use this class instead of the GymEnv class since safety gym envs
-    # do not reset. Any reset is done by us
+    # do not reset, other than on max steps(1000), be sure to reset before this. Any reset is done by us
     batch_locked = True
     def __init__(
         self,
