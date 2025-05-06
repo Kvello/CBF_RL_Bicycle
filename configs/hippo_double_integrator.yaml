@@ -22,7 +22,7 @@ env:
 models:
   cdf_net:
     name: feedforward
-    eps: 1.0e-2
+    eps: 1.0e-3
     layers: [64, 64]
     activation: relu  # specify as string; your code maps to nn.ReLU()
 
@@ -42,7 +42,7 @@ algorithm:
   frames_per_batch: 4096   # 2**12
   sub_batch_size: 256      # 2**8
   max_grad_norm: 1.0
-  total_frames: 1048576     # 2**20
+  total_frames: 524288     # 2**19
   clip_epsilon: 0.2
   lmbda1: 0.1
   lmbda2: 0.95
@@ -61,6 +61,7 @@ plot:
   num_trajs: 32
   bellman_violation: true
   cdf: true
+  resolution: 100
   bellman_eval_res: 100
 
   state_space:
@@ -86,4 +87,4 @@ evaluation:
       low: -1.0
       high: 1.0
 
-seed: 2
+seed: 3

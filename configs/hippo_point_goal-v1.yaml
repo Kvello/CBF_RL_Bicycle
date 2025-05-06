@@ -40,13 +40,13 @@ algorithm:
   lmbda2: 0.95
   critic_coef: 1.0
   supervision_coef: 1.0
-  collision_buffer_size: 16384  # same as frames_per_batch
+  collision_buffer_size: 8192  # same as frames_per_batch
   primary_reward_key: neg_cost
   secondary_reward_key: reward
-  entropy_coef: 0.001
+  entropy_coef: 0.01
   loss_critic_type: smooth_l1
   optim_kwargs:
-    lr: 1.0e-5
+    lr: 1.0e-4
 
 evaluation:
   num_eval_episodes: 32 #TODO
