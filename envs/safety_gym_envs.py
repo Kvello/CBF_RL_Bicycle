@@ -50,7 +50,8 @@ class SafetyGymEnv(EnvBase):
         # of all costs for each object in the environment.
         # We don't differentiate between the objects and all are treated equally.
         # Therfore we only check if any of the costs are positive.
-        neg_cost = ~(info['cost']>0)
+        neg_cost = torch.from_numpy(info['cost']>0).to(self.device)
+        neg_cost = torch.where(neg_cost == True, torch.tensor(-1.0), torch.tensor(0.0))
         # Note that device is always CPU for gym environments
         out = TensorDict(
             {
