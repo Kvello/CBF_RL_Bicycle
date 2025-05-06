@@ -7,7 +7,7 @@ env:
   cfg:
     full_obs_key: "observation"
     safety_obs_key: "observation"
-    max_steps: 512
+    max_steps: 999 #< 1000
     num_parallel_env: 8  #rule of thumb: <=frames_per_batch / max_steps
     params:
       max_input: 1.0
