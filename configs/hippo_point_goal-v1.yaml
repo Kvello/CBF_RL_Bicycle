@@ -57,7 +57,7 @@ evaluation:
 
 render:
   render: true
-  num_frames: 10000
+  num_frames: 1000
   fps : 30
 
 seed: 2
