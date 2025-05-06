@@ -26,10 +26,16 @@ class SafetyGymEnv(EnvBase):
         # All gym environments must run on the CPU
         super().__init__(device=torch.device("cpu"))
         assert num_envs > 0, "num_envs must be greater than 0. SafetyGymEnv does not support unbatched envs"
+        if num_envs > 16:
+            # Above 16 environments, we use synchronous mode
+            async_envs = False
+        else:
+            # Below 16 environments, we use asynchronous mode
+            async_envs = True
         self._env = gym.vector.make(
             env_name,
             num_envs=num_envs,
-            asynchronous=False,
+            asynchronous=async_envs,
             disable_env_checker=False,
         )
         self.batch_size = [num_envs]
