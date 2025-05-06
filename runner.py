@@ -116,7 +116,6 @@ class Runner():
         full_obs_size = self.env.observation_spec[full_obs_key].shape[-1]
         safety_obs_size = self.env.observation_spec[safety_obs_key].shape[-1]
         cdf_net_config = args["models"]["cdf_net"]
-        print("CDF net config: ", cdf_net_config)
         cdf_net_config = {
             "name": cdf_net_config["name"],
             "eps": cdf_net_config.get("eps", 0.0),
@@ -247,8 +246,8 @@ class Runner():
     def env_maker(self, batch_size:int, device:Optional[torch.device]=None):
         env_cfg = self.args["env"]["cfg"]
         env_cfg["num_parallel_env"] = batch_size
-        return make_env(self.args["env"]["name"], env_cfg, device=device)
-
+        env = make_env(self.args["env"]["name"], env_cfg, device=device)
+        return env.base_env
     def plot_integrator_results(self):
         plotting_args = self.args.get("plot", {})
         plotting_args["max_steps"] = self.args["env"]["cfg"]["max_steps"]
@@ -377,9 +376,10 @@ if __name__ == "__main__":
         runner.train()
     if args.get("save", False):
         env_name = args["env"]["name"]
-        cdf_path = env_name + "_cdf" + datetime.strftime("%Y%m%d-%H%M%S") + ".pt"
-        policy_path = env_name + "_policy" + datetime.strftime("%Y%m%d-%H%M%S") + ".pt"
-        value_path = env_name + "_value" + datetime.strftime("%Y%m%d-%H%M%S") + ".pt"
+        now = datetime.now().strftime("%Y%m%d-%H%M%S")
+        cdf_path = env_name + "_cdf" + now + ".pt"
+        policy_path = env_name + "_policy" + now + ".pt"
+        value_path = env_name + "_value" + now + ".pt"
         runner.save(cdf_path=cdf_path,
                     policy_path=policy_path,
                     value_path=value_path) 
