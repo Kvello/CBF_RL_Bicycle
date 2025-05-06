@@ -104,7 +104,6 @@ def make_safety_gym_env(env_id: str, cfg: dict, device: Optional[torch.device]=t
 
     
     base_env = SafetyGymEnv(env_id,
-            device=device,
             num_envs=cfg.get("num_parallel_env",None))
     base_env._env.seed(cfg["seed"])
     return TransformedEnv(
