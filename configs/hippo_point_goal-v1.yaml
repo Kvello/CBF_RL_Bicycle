@@ -7,8 +7,8 @@ env:
   cfg:
     full_obs_key: "observation"
     safety_obs_key: "observation"
-    max_steps: 64
-    num_parallel_env: 8  #<=frames_per_batch / max_steps
+    max_steps: 512
+    num_parallel_env: 8  #rule of thumb: <=frames_per_batch / max_steps
     params:
       max_input: 1.0
 models:
@@ -31,10 +31,10 @@ models:
 
 algorithm:
   num_epochs: 10
-  frames_per_batch: 4096   # 2**12
+  frames_per_batch: 16384   # 2**14
   sub_batch_size: 256      # 2**8
   max_grad_norm: 1.0
-  total_frames: 4194304     # 2**22
+  total_frames: 16384     # 2**22
   clip_epsilon: 0.2
   lmbda1: 0.1
   lmbda2: 0.95
@@ -54,5 +54,10 @@ evaluation:
   render: false #TODO
   render_mode: human #TODO
   track_bellman_violation: false
+
+render:
+  render: true
+  num_frames: 10000
+  fps : 30
 
 seed: 2
