@@ -345,9 +345,12 @@ device = (
 
 
 
-@hydra.main(config_path="configs", config_name="hippo_double_integrator.yaml",version_base="1.3")
+@hydra.main(config_path="configs", config_name="default.yaml",version_base="1.3")
 def main(cfg: DictConfig) -> None:    
-    args = OmegaConf.to_container(cfg, resolve=True)
+    config_file_path = "./configs/" + cfg.config_file
+    with open(config_file_path, "r") as f:
+        args = yaml.safe_load(f)
+    args.update(OmegaConf.to_container(cfg, resolve=True))
     torch.manual_seed(args["seed"])
     #######################
     # Parallelization:

@@ -1,12 +1,5 @@
-load_policy: null
-load_value: null
-load_cdf: null
-train: false
-eval: false
-save: false
-track: false
-wandb_project: "hippo"
-experiment_name: null
+
+wandb_project: "hippo-point-goal1"
 
 env:
   name: Safexp-PointGoal1-v0
@@ -70,5 +63,3 @@ render:
   render: true
   num_frames: 1000
   fps : 30
-
-seed: 2

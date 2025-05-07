@@ -1,0 +1,10 @@
+config_file: hippo_double_integrator.yaml
+load_policy: null
+load_value: null
+load_cdf: null
+train: false
+eval: false
+save: false
+track: false
+experiment_name: null
+seed: 3

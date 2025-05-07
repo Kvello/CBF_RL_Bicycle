@@ -1,12 +1,4 @@
-load_policy: null
-load_value: null
-load_cdf: null
-train: false
-eval: false
-save: false
-track: false
-wandb_project: "hippo"
-experiment_name: null
+wandb_project: "ppo-point-goal1"
 
 env:
   name: Safexp-PointGoal1-v0
@@ -45,8 +37,7 @@ algorithm:
   max_grad_norm: 1.0
   total_frames: 8388608     # 2**23
   clip_epsilon: 0.2
-  lmbda1: 0.95
-  lmbda2: 0.95
+  lmbda: 0.95
   critic_coef: 1.0
   supervision_coef: 0.0
   collision_buffer_size: 0  # same as frames_per_batch
@@ -69,5 +60,3 @@ render:
   render: true
   num_frames: 1000
   fps : 30
-
-seed: 2
