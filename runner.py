@@ -196,7 +196,7 @@ class Runner():
 
         self.evaluator = PolicyEvaluator(env=self.env,
                                     policy_module=self.policy_module,
-                                    rollout_len=self.args["env"]["cfg"]["max_steps"],
+                                    eval_steps=self.args["evaluation"]["eval_steps"],
                                     keys_to_log=[self.args["algorithm"]["primary_reward_key"],
                                                 self.args["algorithm"]["secondary_reward_key"],
                                                 "step_count"])
