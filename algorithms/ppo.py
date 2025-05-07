@@ -122,13 +122,6 @@ class PPO(RLAlgoBase):
             raise ValueError("Collector must have total_frames attribute.\
                                 Try using a different collector.")
 
-        if self.config.get("track", False):
-            wandb.init(project=self.config.get("wandb_project", "ppo"),
-                    sync_tensorboard=True,
-                    monitor_gym=True,
-                    save_code=True,
-                    name=self.config.get("experiment_name", None),
-                    config = {**self.config,"method": "ppo"})
             
         self.advantage_module = GAE(
             gamma=self.gamma,
@@ -180,7 +173,7 @@ class PPO(RLAlgoBase):
                                    eval_func=eval_func))
             pbar.update(tensordict_data.numel())
             # scheduler.step()
-            if self.config.get("track", False):
+            if wandb.run is not None:
                 wandb.log({**logs})
             else:
                 cum_primary_reward_str = \
