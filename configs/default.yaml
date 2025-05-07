@@ -6,5 +6,6 @@ train: false
 eval: false
 save: false
 track: false
+visualize: false
 experiment_name: null
 seed: 3
