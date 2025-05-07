@@ -233,13 +233,13 @@ class Runner():
         if self.args is None:
             raise ValueError("Setup the runner before loading")
         if value_path is not None:
-            self.value_module.load_state_dict(torch.load(value_path))
+            self.value_module.load_state_dict(torch.load(value_path,map_location=self.device))
             print("Value network loaded")       
         if policy_path is not None:
-            self.policy_module.load_state_dict(torch.load(policy_path))
+            self.policy_module.load_state_dict(torch.load(policy_path,map_location=self.device))
             print("Policy loaded")
         if cdf_path is not None:
-            self.cdf_module.load_state_dict(torch.load(cdf_path))
+            self.cdf_module.load_state_dict(torch.load(cdf_path,map_location=self.device))
             print("CDF network loaded")
     # Bellman violation uses a custom env with a different batch size
     def env_maker(self, batch_size:int, device:Optional[torch.device]=None):
@@ -376,9 +376,9 @@ if __name__ == "__main__":
     if args.get("save", False):
         env_name = args["env"]["name"]
         now = datetime.now().strftime("%Y%m%d-%H%M%S")
-        cdf_path ="models/" + env_name + "_cdf_" + now + ".pt"
-        policy_path ="models/" + env_name + "_policy_" + now + ".pt"
-        value_path ="models/" + env_name + "_value_" + now + ".pt"
+        cdf_path ="models/weights" + env_name + "_cdf_" + now + ".pt"
+        policy_path ="models/weights" + env_name + "_policy_" + now + ".pt"
+        value_path ="models/weights" + env_name + "_value_" + now + ".pt"
         runner.save(cdf_path=cdf_path,
                     policy_path=policy_path,
                     value_path=value_path) 
