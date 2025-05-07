@@ -25,17 +25,17 @@ class PolicyEvaluator:
                  env:EnvBase, 
                  policy_module:TensorDictModule,
                  keys_to_log:List[str] = ["reward","step_count"],
-                 rollout_len:int = 1000):
+                 eval_steps:int = 1000):
         self.env = env
         self.policy_module = policy_module
         self.keys_to_log = keys_to_log
-        self.rollout_len = rollout_len
+        self.eval_steps = eval_steps
     def evaluate_policy(self) -> Dict[str,Any]:
         logs = {}
         with set_exploration_type(ExplorationType.DETERMINISTIC), torch.no_grad():
             # execute a rollout with the trained policy
             eval_rollout = self.env.rollout(
-                self.rollout_len, self.policy_module,break_when_any_done=False
+                self.eval_steps, self.policy_module,break_when_any_done=True
             )
             for key in self.keys_to_log:
                 if key in eval_rollout["next"]:
