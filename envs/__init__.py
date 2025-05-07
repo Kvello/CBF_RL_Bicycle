@@ -6,7 +6,7 @@ from envs.safety_gym_envs import SafetyGymEnv
 from typing import Optional
 import torch
 from tensordict import TensorDict
-from .integrator import MultiObjectiveDoubleIntegratorEnv
+from .integrator import DoubleIntegratorEnv
 from typing import Dict, Any, Optional
 from copy import deepcopy
 from torchrl.envs.transforms import (
@@ -63,7 +63,7 @@ def make_double_integrator_env(name:str, cfg: dict, device:Optional[torch.device
 
     obs_signals = cfg["obs_signals"]
     ref_signals = cfg["ref_signals"]
-    base_env = MultiObjectiveDoubleIntegratorEnv(
+    base_env = DoubleIntegratorEnv(
         batch_size=cfg.get("num_parallel_env"),
         seed=cfg["seed"],
         td_params=parameters,
