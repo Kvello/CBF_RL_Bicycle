@@ -232,7 +232,7 @@ class PPO(RLAlgoBase):
         Args:
             td (TensorDict): The data tensor dictionary.
         """
-        if not self.collision_buffer:
+        if self.collision_buffer_size is None or self.collision_buffer_size == 0:
             return
         states = td[self.safety_obs_key]
         collision_indcs = torch.where(
