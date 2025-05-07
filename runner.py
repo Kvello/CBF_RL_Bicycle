@@ -38,6 +38,8 @@ from models.factory import PolicyFactory, ValueFactory
 import safety_gym
 from torchrl.envs.utils import step_mdp
 import time
+import hydra
+from omegaconf import DictConfig, OmegaConf
 
 ACTIVATION_MAP = {
     "relu": nn.ReLU(),
@@ -342,27 +344,10 @@ device = (
 )
 
 
-def parse_args()->Dict[str,Any]:
-    """Parse command line arguments.
-    """
-    parser = argparse.ArgumentParser(description="PPO for Safe Double Integrator")
-    parser.add_argument("--load_policy", type=str, default=None, help="Path to load policy")
-    parser.add_argument("--load_value", type=str, default=None, help="Path to load value")
-    parser.add_argument("--load_cdf", type=str, default=None, help="Path to load CDF")
-    parser.add_argument("--train", action="store_true", default=False, help="Train the model")
-    parser.add_argument("--eval", action="store_true", default=False, help="Evaluate the model (after training)") 
-    parser.add_argument("--save", action="store_true", default=False, help="Save the models")
-    parser.add_argument("--track", action="store_true", default=False, help="Track the training with wandb")
-    parser.add_argument("--wandb_project", type=str, default="hippo", help="Wandb project name")
-    parser.add_argument("--experiment_name", type=str, default=None, help="Wandb experiment name")
-    parser.add_argument("--visualize", action="store_true", default=False, help="Visualize the results")
-    parser.add_argument("--config", type=str, default="configs/hippo_double_integrator.yaml", help="Path to config file(yaml)")
-    return vars(parser.parse_args())
-    
-if __name__ == "__main__":
-    args = parse_args() 
-    with open(args["config"], "r") as f:
-        args.update(yaml.safe_load(f))
+
+@hydra.main(config_path="configs", config_name="hippo_double_integrator.yaml",version_base="1.3")
+def main(cfg: DictConfig) -> None:    
+    args = OmegaConf.to_container(cfg, resolve=True)
     torch.manual_seed(args["seed"])
     #######################
     # Parallelization:
@@ -413,3 +398,5 @@ if __name__ == "__main__":
     
     if wandb.run is not None:
         wandb.finish()
+if __name__ == "__main__":
+    main()
