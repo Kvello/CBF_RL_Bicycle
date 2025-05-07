@@ -26,14 +26,14 @@ from datetime import datetime
 import wandb
 
         
-class SafeDoubleIntegratorEnv(EnvBase):
+class DoubleIntegratorEnv(EnvBase):
     """Stateless environment for discrete double integrator.
         
         The state is [x, x_dot] and the action is [u].
         The continous dynamics are:
         x1_dot = x2
         x2_dot = u
-        The discrete time dynamics can be discretized exactly by assuing zero-order hold:
+        The discrete time dynamics can be discretized exactly by assuming zero-order hold:
         x1_new = x1 + x2*dt + 0.5*u*dt^2
         x2_new = x2 + u*dt
 
@@ -42,7 +42,9 @@ class SafeDoubleIntegratorEnv(EnvBase):
         The input constraints are u in [-max_input, max_input]
     """
     rng = None
-    batch_locked = True
+    batch_locked = True    
+    primary_reward_key:str = "neg_cost"
+    secondary_reward_key:str = "reward"
     def __init__(self,
                  batch_size:Union[int,None]=None, 
                  td_params=None, 
@@ -60,6 +62,10 @@ class SafeDoubleIntegratorEnv(EnvBase):
                 "max_input": 1.0,
                 "max_x1": 1.0,
                 "max_x2": 1.0,
+                "reference_amplitude": 1.1,
+                "reference_frequency": 0.05, # Hz(must be smaller than 0.5*1/dt),
+                # and should be small enough so that the system can likely track it with
+                # subject to the input constraints
                     },[],device=device)
         self._params = td_params
         super().__init__(device=self.device)
@@ -75,59 +81,7 @@ class SafeDoubleIntegratorEnv(EnvBase):
     @property
     def params(self):
         return self._params
-    def _make_spec(self, td_params:TensorDictBase):
-        """Creates the tensor specs for the environment
 
-        Args:
-            td_params (TensorDictBase): TensorDict with keys 'params'
-        """
-        self.observation_spec = CompositeSpec(
-            x1 = UnboundedContinuousTensorSpec(
-                shape=self.batch_size,
-                dtype=torch.float32),
-            x2 = UnboundedContinuousTensorSpec(
-                shape=self.batch_size,
-                dtype=torch.float32),
-            shape=self.batch_size,
-        )
-        self.state_spec = self.observation_spec.clone()
-        self.action_spec = BoundedTensorSpec(
-            low=-td_params["max_input"],
-            high=td_params["max_input"],
-            shape=(*self.batch_size,1),
-            dtype=torch.float32
-        )
-#        self.done_spec = CompositeSpec(
-#            done = DiscreteTensorSpec(
-#                shape  = torch.bool,
-#                n= (*td_params.shape,1),
-#                dtype=2),
-#            shape = ()
-#        )
-
-        # TODO: This should be a discrete spec allowing only -1 and 0. This does not exist in the API
-        # and a custom spec should be created
-        self.reward_spec = BoundedTensorSpec(
-            low=-1.0,
-            high=0.0,
-            shape=(*self.batch_size,1),
-            dtype=torch.float32
-        )
-    def make_composite_from_td(self,td:TensorDict):
-        composite = CompositeSpec(
-            {
-                key : make_composite_from_td(tensor)
-                if isinstance(tensor, TensorDict) 
-                else UnboundedContinuousTensorSpec(
-                    dtype=tensor.dtype,
-                    device=tensor.device,
-                    shape=tensor.shape
-                )
-                for key, tensor in td.items()
-            },
-            shape=td.shape
-        )
-        return composite
     def _step(self, tensordict: TensorDict):
         """
         Args:
@@ -135,7 +89,7 @@ class SafeDoubleIntegratorEnv(EnvBase):
 
         Returns:
             TensorDict: dict with keys 'x1' 'x2', 'reward','terminated', 'info'
-        """
+        """  
         x1 = tensordict['x1']
         x2 = tensordict['x2']
         u = tensordict['action'].squeeze()
@@ -147,7 +101,7 @@ class SafeDoubleIntegratorEnv(EnvBase):
         params = self._params
         costs = torch.zeros_like(x1)
         costs = torch.where(
-            SafeDoubleIntegratorEnv.constraints_satisfied(params,x1, x2), 
+            DoubleIntegratorEnv.constraints_satisfied(params,x1, x2), 
             costs, 
             torch.tensor(1.0,device=x1.device)
         )
@@ -162,12 +116,35 @@ class SafeDoubleIntegratorEnv(EnvBase):
         terminated = costs > 0.0
         done = terminated.clone()
         # Reward
-        reward = -costs.view(*tensordict.shape,1)
+        neg_cost = -costs.view(*tensordict.shape,1)
+
+        # 1-norm, 2-norm, or something else? Max-norm?
+        X = torch.stack(
+            [x1,x2], dim=0
+        )
+        Y = torch.stack(
+            [tensordict["x1_ref"], tensordict["x2_ref"]], dim=0
+        )
+        dist = torch.linalg.vector_norm(X - Y, ord=2, dim=0)
+        
+        reward = -dist
+        reward = reward.view_as(neg_cost).to(torch.float32)
+        n_new = tensordict["reference_index"].squeeze() + 1
+        params = self.params
+        A = params["reference_amplitude"]
+        f = params["reference_frequency"]
+        dt = params["dt"]
+        x1_ref_new = A*torch.sin(2*torch.pi*f*n_new*dt)
+        x2_ref_new = A*2*torch.pi*f*torch.cos(2*torch.pi*f*n_new*dt)
 
         out = TensorDict({
             "x1": x1_new,
             "x2": x2_new,
-            "reward": reward,
+            DoubleIntegratorEnv.primary_reward_key: neg_cost,
+            DoubleIntegratorEnv.secondary_reward_key: reward,
+            "reference_index": n_new,
+            "x1_ref": x1_ref_new,
+            "x2_ref": x2_ref_new,
             "done": done,
             "terminated": terminated,
         },
@@ -185,15 +162,91 @@ class SafeDoubleIntegratorEnv(EnvBase):
             *(2*params["max_x2"])
             - params["max_x2"]
         )
-        terminated= torch.zeros(self.batch_size,dtype=torch.bool,device=self.device)
-        done = terminated.clone()
+        A = params["reference_amplitude"]
+        f = params["reference_frequency"]
+        dt = params["dt"]
+        # Start reference signal from position closest to the current x1
+        y1_0 = torch.where(
+            torch.abs(x1) < A,
+            x1,
+            A
+        )
+        n = (torch.arcsin(y1_0/A)/(2*torch.pi*f*dt)).to(torch.int32)
+        # select starting point so that x2(0) is also as close as possible to the reference signal
+        # subject to y1_o given
+        n = torch.where(
+            x2 < 0.0,
+            (1/(2*f*dt) -n).to(torch.int32),
+            n
+        )
+        # Note that arcsin gives values in the range [-pi/2, pi/2]
+        # and that cos(x) is always positive in this range
+        # Which means that if x2 is negative, we should select the symmetric time point
+        # pi - t where sin(pi - t) = sin(t), but cos(pi - t) = -cos(t)
+        x1_ref = A*torch.sin(2*torch.pi*f*dt*n)
+        x2_ref = A*2*torch.pi*f*torch.cos(2*torch.pi*f*dt*n)
         out = TensorDict(
             {
             "x1": x1,
             "x2": x2,
+            "reference_index": n,
+            "x1_ref": x1_ref,
+            "x2_ref": x2_ref,
             },
         batch_size=self.batch_size)
         return out
+    def _make_spec(self, td_params:TensorDictBase):
+        """Creates the tensor specs for the environment
+
+        Args:
+            td_params (TensorDictBase): TensorDict with keys 'params'
+        """
+        self.observation_spec = CompositeSpec(
+            x1 = UnboundedContinuousTensorSpec(
+                shape=self.batch_size,
+                dtype=torch.float32),
+            x2 = UnboundedContinuousTensorSpec(
+                shape=self.batch_size,
+                dtype=torch.float32),
+            reference_index = UnboundedContinuousTensorSpec(
+                shape=(*self.batch_size,),
+                dtype=torch.int32
+            ),
+            x1_ref = UnboundedContinuousTensorSpec(
+                shape=(*self.batch_size,),
+                dtype=torch.float32
+            ),
+            x2_ref = UnboundedContinuousTensorSpec(
+                shape=(*self.batch_size,),
+                dtype=torch.float32
+            ),
+            shape=self.batch_size,
+        )
+        self.state_spec = self.observation_spec.clone()
+        self.action_spec = BoundedTensorSpec(
+            low=-td_params["max_input"],
+            high=td_params["max_input"],
+            shape=(*self.batch_size,1),
+            dtype=torch.float32
+        )
+
+        # TODO: This should be a discrete spec allowing only -1 and 0. This does not exist in the API
+        # and a custom spec should be created
+        self.reward_spec = CompositeSpec(
+            {
+            DoubleIntegratorEnv.primary_reward_key: BoundedTensorSpec(
+                low=-1.0,
+                high=0.0,
+                shape=(*self.batch_size,1),
+                dtype=torch.float32
+            ),
+            DoubleIntegratorEnv.secondary_reward_key: UnboundedContinuousTensorSpec(
+                shape=(*self.batch_size,1),
+                dtype=torch.float32
+            )
+            },
+            shape=self.batch_size
+        )    
     @staticmethod
     def constraints_satisfied(params:TensorDict, 
                               x1:torch.Tensor, 
@@ -215,6 +268,7 @@ class SafeDoubleIntegratorEnv(EnvBase):
     @property
     def obs_size_unbatched(self):
         return 2
+
 
         
 # TODO:
@@ -264,8 +318,8 @@ def plot_integrator_trajectories(env: EnvBase,
             traj_length = torch.where(rollouts["next","done"][k])[0][0] + 1
             traj_x = rollouts["x1"][k].cpu().detach().numpy()[0:traj_length]
             traj_y = rollouts["x2"][k].cpu().detach().numpy()[0:traj_length]
-            ref_x = rollouts["y1_ref"][k].cpu().detach().numpy()[0:traj_length]
-            ref_y = rollouts["y2_ref"][k].cpu().detach().numpy()[0:traj_length]
+            ref_x = rollouts["x1_ref"][k].cpu().detach().numpy()[0:traj_length]
+            ref_y = rollouts["x2_ref"][k].cpu().detach().numpy()[0:traj_length]
             plt.plot(traj_x, traj_y)
             plt.plot(traj_x[0], traj_y[0], 'og')
             plt.plot(ref_x, ref_y, 'r--')
@@ -295,8 +349,8 @@ def plot_integrator_trajectories(env: EnvBase,
         td = TensorDict({
             "x1": inputs[...,0],
             "x2": inputs[...,1],
-            "y1_ref": inputs[...,0],
-            "y2_ref": inputs[...,1],
+            "x1_ref": inputs[...,0],
+            "x2_ref": inputs[...,1],
             "done": torch.zeros_like(inputs[...,0],dtype=torch.bool),
         })
         for t in env.transform[:-1]:
@@ -347,8 +401,8 @@ def plot_value_function_integrator(max_x1:float, max_x2:float,
     td = TensorDict({
         "x1": inputs[...,0],
         "x2": inputs[...,1],
-        "y1_ref": inputs[...,0],
-        "y2_ref": inputs[...,1],
+        "x1_ref": inputs[...,0],
+        "x2_ref": inputs[...,1],
         "done": torch.zeros_like(inputs[...,0],dtype=torch.bool),
     },batch_size=inputs.shape[:-1],device=inputs.device)
     for t in transforms:
@@ -378,162 +432,4 @@ def plot_value_function_integrator(max_x1:float, max_x2:float,
     else:
         plt.savefig("results/value_function_landscape" + datetime.now().strftime("%Y%m%d-%H%M%S") + ".pdf")
 
-class MultiObjectiveDoubleIntegratorEnv(SafeDoubleIntegratorEnv):
-    """Stateless environment for discrete double integrator with two reward signals.
-    One encouraging safety, the other any other type of goal.
-        
-        The state is [x, x_dot] and the action is [u].
-        The continous dynamics are:
-        x1_dot = x2
-        x2_dot = u
-        The discrete time dynamics can be discretized exactly by assuing zero-order hold:
-        x1_new = x1 + x2*dt + 0.5*u*dt^2
-        x2_new = x2 + u*dt
 
-        The safety constraint is that the state should be within the box 
-        [-max_x1, max_x1]x[-max_x2, max_x2]
-        The input constraints are u in [-max_input, max_input]
-    """
-    primary_reward_key:str = "r1"
-    secondary_reward_key:str = "r2"
-    def __init__(self, 
-                 batch_size:Union[int,None]=None,
-                 td_params=None, 
-                 seed=None, 
-                 device=None):
-        batch_locked = True
-        if td_params is None:
-            # Default parameters
-            td_params = TensorDict({
-                "dt": 0.01,
-                "max_input": 1.0,
-                "max_x1": 1.0,
-                "max_x2": 1.0,
-                "reference_amplitude": 1.1,
-                "reference_frequency": 0.05, # Hz(must be smaller than 0.5*1/dt),
-                # and should be small enough so that the system can likely track it with
-                # subject to the input constraints
-                    },[],device=device)
-        super().__init__(batch_size=batch_size, 
-                         td_params=td_params, 
-                         seed=seed, 
-                         device=device)
-    # For some reason creating the secondary reward function as a modifiable class attribute 
-    # does not work with the multisync collector. Instead, the collecor uses the default function
-    # regardless of modifications to the class attribute. Therefore, the function is
-    # defined as a static method and called from the step method.
-    def _step(self, tensordict: TensorDict)->TensorDict:
-        # 1-norm, 2-norm, or something else? Max-norm?
-        X = torch.stack(
-            [tensordict["x1"], tensordict["x2"]], dim=0
-        )
-        Y = torch.stack(
-            [tensordict["y1_ref"], tensordict["y2_ref"]], dim=0
-        )
-        dist = torch.linalg.vector_norm(X - Y, ord=2, dim=0)
-        
-        r2 = -dist
-        # r2 = -torch.abs(tensordict["x1"] - tensordict["y1_ref"])
-        out = super()._step(tensordict)
-        r1 = out["reward"].clone()
-        r2 = r2.view_as(r1).to(torch.float32)
-        # Only step reference signal if the distance is small enough
-        # Allows system to catch up to the reference signal
-        # n_new = torch.where(
-        #     dist < 0.1,
-        #     tensordict["reference_index"].squeeze() + 1,
-        #     tensordict["reference_index"].squeeze()
-        # )
-        n_new = tensordict["reference_index"].squeeze() + 1
-        params = self.params
-        A = params["reference_amplitude"]
-        f = params["reference_frequency"]
-        dt = params["dt"]
-        y1_ref_new = A*torch.sin(2*torch.pi*f*n_new*dt)
-        y2_ref_new = A*2*torch.pi*f*torch.cos(2*torch.pi*f*n_new*dt)
-
-        new_vals = TensorDict({
-            MultiObjectiveDoubleIntegratorEnv.primary_reward_key: r1,
-            MultiObjectiveDoubleIntegratorEnv.secondary_reward_key: r2,
-            "reference_index": n_new,
-            "y1_ref": y1_ref_new,
-            "y2_ref": y2_ref_new,
-        },out.batch_size)
-        out.update(new_vals)
-        return out
-    def _reset(self,tensordict:TensorDict):
-        td = super()._reset(tensordict)
-        x1 = td["x1"]
-        x2 = td["x2"]
-        params = self.params
-        A = params["reference_amplitude"]
-        f = params["reference_frequency"]
-        dt = params["dt"]
-        # Start reference signal from position closest to the current x1
-        y1_0 = torch.where(
-            torch.abs(x1) < A,
-            x1,
-            A
-        )
-        n = (torch.arcsin(y1_0/A)/(2*torch.pi*f*dt)).to(torch.int32)
-        # select starting point so that x2(0) is also as close as possible to the reference signal
-        # subject to y1_o given
-        n = torch.where(
-            x2 < 0.0,
-            (1/(2*f*dt) -n).to(torch.int32),
-            n
-        )
-        # Note that arcsin gives values in the range [-pi/2, pi/2]
-        # and that cos(x) is always positive in this range
-        # Which means that if x2 is negative, we should select the symmetric time point
-        # pi - t where sin(pi - t) = sin(t), but cos(pi - t) = -cos(t)
-        y1_ref = A*torch.sin(2*torch.pi*f*dt*n)
-        y2_ref = A*2*torch.pi*f*torch.cos(2*torch.pi*f*dt*n)
-        new_vals = TensorDict({
-            "reference_index": n,
-            "y1_ref": y1_ref,
-            "y2_ref": y2_ref,
-        },td.batch_size)
-        td.update(new_vals)
-        return td
-    
-    def _make_spec(self, td_params:TensorDictBase):
-        super()._make_spec(td_params)
-        base_reward_spec = self.reward_spec
-        self.reward_spec = CompositeSpec(
-            {
-                "reward": base_reward_spec,
-                self.primary_reward_key: base_reward_spec,
-                self.secondary_reward_key: UnboundedContinuousTensorSpec(
-                    shape=(*self.batch_size,1),
-                    dtype=torch.float32
-                )
-            },
-            shape=self.batch_size,
-        )
-        self.observation_spec = CompositeSpec(
-            x1 = UnboundedContinuousTensorSpec(
-                shape=self.batch_size,
-                dtype=torch.float32),
-            x2 = UnboundedContinuousTensorSpec(
-                shape=self.batch_size,
-                dtype=torch.float32),
-            shape=self.batch_size,
-        )
-        self.observation_spec = CompositeSpec(
-                x1 = self.observation_spec["x1"],
-                x2 = self.observation_spec["x2"],
-                reference_index = UnboundedContinuousTensorSpec(
-                    shape=(*self.batch_size,),
-                    dtype=torch.int32
-                ),
-                y1_ref = UnboundedContinuousTensorSpec(
-                    shape=(*self.batch_size,),
-                    dtype=torch.float32
-                ),
-                y2_ref = UnboundedContinuousTensorSpec(
-                    shape=(*self.batch_size,),
-                    dtype=torch.float32
-                ),
-            shape=self.batch_size,
-        )
