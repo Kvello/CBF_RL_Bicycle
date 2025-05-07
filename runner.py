@@ -74,6 +74,8 @@ class Runner():
             algo_args["gamma"] = self.args["env"]["gamma"]
             algo_args["safety_obs_key"] = self.args["env"]["cfg"]["safety_obs_key"]
             ppo_entity.setup(algo_args)
+        else:
+            raise ValueError("Algorithm not supported")
         print("Training with config: ",self.args)
         if self.args.get("train",False):
             collector = SyncDataCollector(
@@ -94,16 +96,27 @@ class Runner():
             # scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
             #     optim, args["total_frames"] // args["frames_per_batch"], 1e-8
             # )
-            ppo_entity.train(
-                policy_module=self.policy_module,
-                V_primary=self.cdf_module,
-                V_secondary=self.value_module,
-                optim=optim,
-                collector=collector,
-                replay_buffer=replay_buffer,
-                eval_func=self.evaluate
-            ) 
-
+            if self.args["algorithm"]["name"] == "hippo":
+                ppo_entity.train(
+                    policy_module=self.policy_module,
+                    V_primary=self.cdf_module,
+                    V_secondary=self.value_module,
+                    optim=optim,
+                    collector=collector,
+                    replay_buffer=replay_buffer,
+                    eval_func=self.evaluate
+                ) 
+            elif self.args["algorithm"]["name"] == "ppo":
+                ppo_entity.train(
+                    policy_module=self.policy_module,
+                    value_module=self.cdf_module,
+                    optim=optim,
+                    collector=collector,
+                    replay_buffer=replay_buffer,
+                    eval_func=self.evaluate
+                )
+            else:
+                raise ValueError("Algorithm not supported")
     def setup(self,args):
         self.args = args
         warn_str = "Warning: max_input not set in env params. Defaulting to infinity"
