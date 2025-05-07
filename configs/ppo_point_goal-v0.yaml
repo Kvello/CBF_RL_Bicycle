@@ -1,0 +1,63 @@
+
+env:
+  name: Safexp-PointGoal1-v0
+  gamma: 0.98
+  # These arguments are passed to the environment constructor
+  cfg:
+    full_obs_key: "observation"
+    safety_obs_key: "observation"
+    max_steps: 999 #< 1000
+    num_parallel_env: 8  #rule of thumb: <=frames_per_batch / max_steps
+    params:
+      max_input: 1.0
+models:
+  cdf_net:
+    name: feedforward
+    eps: 1.0e-3
+    layers: [128, 64, 32]
+    activation: relu 
+
+  value_net:
+    name: feedforward
+    eps: 0.0
+    layers: [128, 64, 32]
+    activation: relu
+
+  policy_net:
+    name: feedforward
+    layers: [128, 64, 32] 
+    activation: relu
+
+algorithm:
+  name: ppo
+  num_epochs: 10
+  frames_per_batch: 32768   # 2**15
+  sub_batch_size: 256      # 2**8
+  max_grad_norm: 1.0
+  total_frames: 8388608     # 2**23
+  clip_epsilon: 0.2
+  lmbda1: 0.95
+  lmbda2: 0.95
+  critic_coef: 1.0
+  supervision_coef: 0.0
+  collision_buffer_size: 0  # same as frames_per_batch
+  primary_reward_key: reward
+  secondary_reward_key: neg_cost
+  entropy_coef: 0.01
+  loss_critic_type: smooth_l1
+  optim_kwargs:
+    lr: 1.0e-4
+  scheduler:
+    name: cosine
+    eps: 1.0e-6
+evaluation:
+  num_eval_episodes: 32 #TODO
+  freq: 1000 #TODO
+  track_bellman_violation: false
+
+render:
+  render: true
+  num_frames: 1000
+  fps : 30
+
+seed: 2
