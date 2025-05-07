@@ -176,7 +176,7 @@ class PPO(RLAlgoBase):
             elif scheduler_name == "cosine":
                 self.scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
                     self.optim,
-                    T_max=self.scheduler_config["T_max"],
+                    T_max=int(total_frames / self.frames_per_batch),
                     eta_min=self.scheduler_config["eta_min"],
                 )
             elif scheduler_name == "step":
