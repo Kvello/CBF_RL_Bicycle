@@ -62,10 +62,10 @@ class PPO(RLAlgoBase):
         warn_str = "entropy_coef not found in config, using default value of 0.00"
         self.entropy_coef = get_config_value(config, "entropy_coef", 0.00, warn_str)
         
-        warn_str = "collision_buffer_size not found in config, using default value of 1e6"
+        warn_str = "collision_buffer_size not found in config, using default value of None"
         self.collision_buffer_size = get_config_value(config, 
                                                        "collision_buffer_size",
-                                                       int(1e6),
+                                                       None,
                                                        warn_str)
 
         warn_str = "supervision_coef not found in config, using default value of 1.0"
@@ -154,11 +154,14 @@ class PPO(RLAlgoBase):
         )
         self.optim = optim(self.loss_module.parameters(), **self.config.get("optim_kwargs", {}))
 
-        self.collision_buffer = ReplayBuffer(
-            storage=LazyTensorStorage(max_size = self.collision_buffer_size,
-                                      device=self.device),
-            sampler=RandomSampler(),
-        )
+        if self.collision_buffer_size is not None:
+            self.collision_buffer = ReplayBuffer(
+                storage=LazyTensorStorage(max_size = self.collision_buffer_size,
+                                        device=self.device),
+                sampler=RandomSampler(),
+            )
+        else:
+            self.collision_buffer = None
         print("Training with config:")
         print(self.config)
         logs = defaultdict(list)
