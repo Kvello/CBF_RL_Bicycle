@@ -6,7 +6,7 @@ env:
   # These arguments are passed to the environment constructor
   cfg:
     obs_signals: ["x1", "x2"]
-    ref_signals: ["y1_ref", "y2_ref"]
+    ref_signals: ["x1_ref", "x2_ref"]
     full_obs_key: "observation_extended"
     safety_obs_key: "observation"
     max_steps: 64
@@ -50,8 +50,8 @@ algorithm:
   critic_coef: 1.0
   supervision_coef: 1.0
   collision_buffer_size: 4096  # same as frames_per_batch
-  primary_reward_key: r1
-  secondary_reward_key: r2
+  primary_reward_key: neg_cost
+  secondary_reward_key: reward
   entropy_coef: 0.001
   loss_critic_type: smooth_l1
   optim_kwargs:
@@ -74,10 +74,7 @@ plot:
       high: 1.0
 
 evaluation:
-  num_eval_episodes: 32 #TODO
-  freq: 1000 #TODO
-  render: false #TODO
-  render_mode: human #TODO
+  eval_steps: 1000 # Minimum number of steps over which to average the evaluation
   track_bellman_violation: true
   bellman_eval_res: 10
   state_space:
