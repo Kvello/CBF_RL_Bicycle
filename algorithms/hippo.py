@@ -127,10 +127,10 @@ class HierarchicalPPO(PPO):
         warn_str = "entropy_coef not found in config, using default value of 0.0"
         self.entropy_coef = get_config_value(config, "entropy_coef", 0.0, warn_str)
 
-        warn_str = "collision_buffer_size not found in config, using default value of 1e6"
+        warn_str = "collision_buffer_size not found in config, using default value of None"
         self.collision_buffer_size = get_config_value(config, 
                                                       "collision_buffer_size",
-                                                      int(1e6),
+                                                      None,
                                                       warn_str)
         warn_str = "supervision_coef not found in config, using default value of 1.0"
         self.supervision_coef = get_config_value(config, "supervision_coef", 1.0, warn_str)
@@ -222,11 +222,14 @@ class HierarchicalPPO(PPO):
             list(V_secondary.parameters()),
             **self.optim_kwargs
         )
-        self.collision_buffer = ReplayBuffer(
-            storage=LazyTensorStorage(max_size = self.collision_buffer_size,
-                                      device=self.device),
-            sampler=RandomSampler(),
-        )
+        if self.collision_buffer_size is None:
+            self.collision_buffer = None
+        else:
+            self.collision_buffer = ReplayBuffer(
+                storage=LazyTensorStorage(max_size = self.collision_buffer_size,
+                                        device=self.device),
+                sampler=RandomSampler(),
+            )
         print("Training with config:")
         print(self.config)
         logs = defaultdict(list)

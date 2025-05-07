@@ -200,6 +200,8 @@ class PPO(RLAlgoBase):
         Args:
             td (TensorDict): The data tensor dictionary.
         """
+        if self.collision_buffer is None:
+            return
         states = td[self.safety_obs_key]
         collision_indcs = torch.where(
             td["next", self.primary_reward_key] <0.0
