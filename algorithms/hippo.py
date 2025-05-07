@@ -224,8 +224,8 @@ class HierarchicalPPO(PPO):
             list(V_secondary.parameters()),
             **self.optim_kwargs
         )
-        if self.collision_buffer_size is None:
-            self.collision_buffer = None
+        if self.collision_buffer_size is None or self.collision_buffer_size == 0:
+            self.collision_buffer = []
         else:
             self.collision_buffer = ReplayBuffer(
                 storage=LazyTensorStorage(max_size = self.collision_buffer_size,
@@ -258,11 +258,6 @@ class HierarchicalPPO(PPO):
                                 Please use one of the following: linear, cosine, step")
         else:
             self.scheduler = None
-        self.collision_buffer = ReplayBuffer(
-            storage=LazyTensorStorage(max_size = self.collision_buffer_size,
-                                      device=self.device),
-            sampler=RandomSampler(),
-        )
         print("Training with config:")
         print(self.config)
         logs = defaultdict(list)

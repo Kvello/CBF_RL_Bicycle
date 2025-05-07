@@ -156,14 +156,14 @@ class PPO(RLAlgoBase):
         )
         self.optim = optim(self.loss_module.parameters(), **self.config.get("optim_kwargs", {}))
 
-        if self.collision_buffer_size is not None:
+        if self.collision_buffer_size is None or self.collision_buffer_size == 0:
+            self.collision_buffer = []
+        else:
             self.collision_buffer = ReplayBuffer(
                 storage=LazyTensorStorage(max_size = self.collision_buffer_size,
                                         device=self.device),
                 sampler=RandomSampler(),
             )
-        else:
-            self.collision_buffer = None
         if self.scheduler_config is not None:
             scheduler_name = self.scheduler_config["name"]
             if scheduler_name == "linear":
@@ -190,11 +190,6 @@ class PPO(RLAlgoBase):
                                 Please use one of the following: linear, cosine, step")
         else:
             self.scheduler = None
-        self.collision_buffer = ReplayBuffer(
-            storage=LazyTensorStorage(max_size = self.collision_buffer_size,
-                                      device=self.device),
-            sampler=RandomSampler(),
-        )
         print("Training with config:")
         print(self.config)
         logs = defaultdict(list)
@@ -237,7 +232,7 @@ class PPO(RLAlgoBase):
         Args:
             td (TensorDict): The data tensor dictionary.
         """
-        if self.collision_buffer is None:
+        if not self.collision_buffer:
             return
         states = td[self.safety_obs_key]
         collision_indcs = torch.where(
