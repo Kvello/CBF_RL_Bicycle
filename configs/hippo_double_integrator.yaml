@@ -56,6 +56,7 @@ algorithm:
   loss_critic_type: smooth_l1
   optim_kwargs:
     lr: 5.0e-5
+  scheduler: null
 
 
 plot:
@@ -63,7 +64,6 @@ plot:
   bellman_violation: true
   cdf: true
   resolution: 100
-  bellman_eval_res: 100
 
   state_space:
     x1:

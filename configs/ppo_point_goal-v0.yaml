@@ -49,7 +49,8 @@ algorithm:
     lr: 1.0e-4
   scheduler:
     name: cosine
-    eps: 1.0e-6
+    eta_min: 1.0e-6
+    last_epoch: -1
 evaluation:
   num_eval_episodes: 32 #TODO
   freq: 1000 #TODO
