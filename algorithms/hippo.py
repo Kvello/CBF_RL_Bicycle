@@ -141,6 +141,8 @@ class HierarchicalPPO(PPO):
         warn_str = "safety_obs_key not found in config, using default value of 'observation'"
         self.safety_obs_key = get_config_value(config, "safety_obs_key", "observation", warn_str)
 
+        warn_str = "scheduler not found in config, using default value of None"
+        self.scheduler_config = get_config_value(config, "scheduler", None, warn_str)
         self.loss_value_log_keys = {
             "loss_safety_objective",
             "loss_secondary_objective",
@@ -222,6 +224,32 @@ class HierarchicalPPO(PPO):
             list(V_secondary.parameters()),
             **self.optim_kwargs
         )
+        if self.scheduler_config is not None:
+            scheduler_name = self.scheduler_config["name"]
+            if scheduler_name == "linear":
+                self.scheduler = torch.optim.lr_scheduler.LinearLR(
+                    self.optim,
+                    start_factor=self.scheduler_config["start_factor"],
+                    end_factor=self.scheduler_config["end_factor"],
+                    total_iters=self.scheduler_config["total_iters"],
+                )
+            elif scheduler_name == "cosine":
+                self.scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+                    self.optim,
+                    T_max=int(total_frames/self.frames_per_batch),
+                    eta_min=self.scheduler_config.get("eta_min",0.0),
+                )
+            elif scheduler_name == "step":
+                self.scheduler = torch.optim.lr_scheduler.StepLR(
+                    self.optim,
+                    step_size=self.scheduler_config["step_size"],
+                    gamma=self.scheduler_config["gamma"],
+                )
+            else:
+                raise ValueError(f"Scheduler {scheduler_name} not found in config.\
+                                Please use one of the following: linear, cosine, step")
+        else:
+            self.scheduler = None
         self.collision_buffer = ReplayBuffer(
             storage=LazyTensorStorage(max_size = self.collision_buffer_size,
                                       device=self.device),
@@ -239,7 +267,8 @@ class HierarchicalPPO(PPO):
                                    replay_buffer,
                                    eval_func=eval_func))
             pbar.update(tensordict_data.numel())
-            # scheduler.step()
+            if self.scheduler is not None:
+                self.scheduler.step()
             if wandb.run is not None:
                 wandb.log({**logs})
             else:
