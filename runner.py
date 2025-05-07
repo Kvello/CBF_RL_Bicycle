@@ -196,7 +196,7 @@ class Runner():
 
         self.evaluator = PolicyEvaluator(env=self.env,
                                     policy_module=self.policy_module,
-                                    eval_steps=self.args["evaluation"]["eval_steps"],
+                                    eval_steps=self.args["env"]["cfg"]["max_steps"],
                                     keys_to_log=[self.args["algorithm"]["primary_reward_key"],
                                                 self.args["algorithm"]["secondary_reward_key"],
                                                 "step_count"])
@@ -229,6 +229,7 @@ class Runner():
                 self.policy_module,
                 self.env_maker, 
                 self.args["env"]["gamma"],
+                reward_key=self.args["algorithm"]["primary_reward_key"],
                 transforms=self.env.transform[:-1]
             )
             logs["bellman_violation_mean"] = bm_viol.flatten().mean().item()
@@ -272,9 +273,9 @@ class Runner():
     def plot_integrator_results(self):
         plotting_args = self.args.get("plot", {})
         plotting_args["max_steps"] = self.args["env"]["cfg"]["max_steps"]
+        resolution = plotting_args.get("resolution", 100)
         if plotting_args.get("cdf",False):
             print("Plotting cdf")
-            resolution = plotting_args.get("resolution", 100)
             plot_value_function_integrator(self.params["max_x1"], 
                                         self.params["max_x2"],
                                         resolution,
@@ -289,12 +290,13 @@ class Runner():
             print("Plotted trajectories")
         if plotting_args.get("bellman_violation",False):
             print("Calculating and plotting Bellman violation")
-            bm_viol,mesh = calculate_bellman_violation(plotting_args["bellman_eval_res"], 
+            bm_viol,mesh = calculate_bellman_violation(resolution,
                                                 self.cdf_module,
                                                 plotting_args["state_space"], 
                                                 self.policy_module,
                                                 self.env_maker,
                                                 self.args["env"]["gamma"],
+                                                reward_key=self.args["algorithm"]["primary_reward_key"],
                                                 transforms=self.env.transform[:-1])
             X = mesh[0].reshape(bm_viol.shape)
             Y = mesh[1].reshape(bm_viol.shape)
