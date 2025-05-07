@@ -78,7 +78,7 @@ class PPO(RLAlgoBase):
         self.safety_obs_key = get_config_value(config, "safety_obs_key", "observation", warn_str)
         
         warn_str = "scheduler_config not found in config, using default value of None"
-        self.scheduler_config = get_config_value(config, "scheduler_config", None, warn_str) 
+        self.scheduler_config = get_config_value(config, "scheduler", None, warn_str) 
 
         self.loss_value_log_keys = ["loss_safety_objective",
                                     "loss_CDF", 
