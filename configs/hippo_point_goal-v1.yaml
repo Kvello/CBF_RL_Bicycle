@@ -30,6 +30,7 @@ models:
     activation: relu
 
 algorithm:
+  type: hippo
   num_epochs: 10
   frames_per_batch: 8192   # 2**13
   sub_batch_size: 256      # 2**8

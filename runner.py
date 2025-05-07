@@ -1,4 +1,5 @@
 from algorithms.hippo import HierarchicalPPO as HiPPO
+from algorithms.ppo import PPO
 from typing import Dict, Any
 from torchrl.data.replay_buffers import TensorDictReplayBuffer
 from torchrl.collectors import SyncDataCollector
@@ -59,26 +60,34 @@ class Runner():
     def train(self):
         if self.args == None:
             raise ValueError("Setup the runner before training")
-        ppo_entity = HiPPO()
-        HiPPO_args = self.args["algorithm"]
-        HiPPO_args["device"] = self.device
-        HiPPO_args["gamma"] = self.args["env"]["gamma"]
-        HiPPO_args["safety_obs_key"] = self.args["env"]["cfg"]["safety_obs_key"]
-        ppo_entity.setup(HiPPO_args)
+        if self.args["algorithm"]["name"] == "hippo":
+            ppo_entity = HiPPO()
+            algo_args = self.args["algorithm"]
+            algo_args["device"] = self.device
+            algo_args["gamma"] = self.args["env"]["gamma"]
+            algo_args["safety_obs_key"] = self.args["env"]["cfg"]["safety_obs_key"]
+            ppo_entity.setup(algo_args)
+        elif self.args["algorithm"]["name"] == "ppo":
+            ppo_entity = PPO()
+            algo_args = self.args["algorithm"]
+            algo_args["device"] = self.device
+            algo_args["gamma"] = self.args["env"]["gamma"]
+            algo_args["safety_obs_key"] = self.args["env"]["cfg"]["safety_obs_key"]
+            ppo_entity.setup(algo_args)
         print("Training with config: ",self.args)
         if self.args.get("train",False):
             collector = SyncDataCollector(
                 create_env_fn=self.env,
                 policy=self.policy_module,
-                frames_per_batch=HiPPO_args["frames_per_batch"],
-                total_frames=HiPPO_args["total_frames"],
+                frames_per_batch=algo_args["frames_per_batch"],
+                total_frames=algo_args["total_frames"],
                 split_trajs=False,
                 device=self.device,
                 exploration_type=ExplorationType.RANDOM,
                 reset_at_each_iter=True)
 
             replay_buffer = TensorDictReplayBuffer(
-                storage=LazyTensorStorage(max_size=HiPPO_args["frames_per_batch"]),
+                storage=LazyTensorStorage(max_size=algo_args["frames_per_batch"]),
                 sampler=SamplerWithoutReplacement(),
             )
             optim = torch.optim.Adam
