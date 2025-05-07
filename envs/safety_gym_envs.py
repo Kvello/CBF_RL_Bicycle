@@ -21,36 +21,45 @@ class SafetyGymEnv(EnvBase):
     def __init__(
         self,
         env_name: str,
-        num_envs: int,
+        num_envs: int = 1,
     ):
         # All gym environments must run on the CPU
         super().__init__(device=torch.device("cpu"))
-        assert num_envs > 0, "num_envs must be greater than 0. SafetyGymEnv does not support unbatched envs"
         if num_envs > 16:
             # Above 16 environments, we use synchronous mode
             async_envs = False
         else:
             # Below 16 environments, we use asynchronous mode
             async_envs = True
-        self._env = gym.vector.make(
-            env_name,
-            num_envs=num_envs,
-            asynchronous=async_envs,
-            disable_env_checker=False,
-        )
-        self.batch_size = [num_envs]
+        if num_envs > 1:
+            self._env = gym.vector.make(
+                env_name,
+                num_envs=num_envs,
+                asynchronous=async_envs,
+                disable_env_checker=False,
+            )
+        elif num_envs == 1:
+            self._env = gym.make(
+                env_name,
+                disable_env_checker=False,
+            )
+        self.batch_size = [num_envs] if num_envs > 1 else []
         self._make_specs()
     def _step(self, tensordict: TensorDict) -> TensorDict:
         # Extract the action from the tensordict and convert it to a numpy array
         action = tensordict.get("action")
         action = action.to(torch.float32).cpu().numpy()
         next_obs, reward, done, info = self._env.step(action)
+        done = np.array(done)
+        reward = np.array(reward)
+        next_obs = np.array(next_obs)
         assert (done == False).all(), "SafetyGymEnv assumes that the environment is not reset"
         # The 'cost' field in the info dict is the 'aggregate cost', i.e the sum
         # of all costs for each object in the environment.
         # We don't differentiate between the objects and all are treated equally.
         # Therfore we only check if any of the costs are positive.
-        neg_cost = torch.from_numpy(info['cost']>0).to(self.device)
+        neg_cost = np.array(info['cost']>0)
+        neg_cost = torch.from_numpy(neg_cost).to(self.device)
         neg_cost = torch.where(neg_cost == True, torch.tensor(-1.0), torch.tensor(0.0))
         # Note that device is always CPU for gym environments
         out = TensorDict(
@@ -71,7 +80,10 @@ class SafetyGymEnv(EnvBase):
         return out
     def _reset(self, tensordict: TensorDict) -> TensorDict:
         obs = self._env.reset()
-        done = np.zeros((self.batch_size[0],1), dtype=bool)
+        if self.batch_size:
+            done = np.zeros((self.batch_size[0],1), dtype=bool)
+        else:
+            done = np.zeros((1,), dtype=bool)
         out = TensorDict(
             {
                 "observation": torch.from_numpy(obs).to(self.device),
@@ -84,7 +96,7 @@ class SafetyGymEnv(EnvBase):
         )
         return out
     def _set_seed(self, seed: int) -> None:
-        self._env.set_seed(seed)
+        self._env.seed(seed)
 
     def _reward_space(self, env):
         if hasattr(env, "reward_space") and env.reward_space is not None:
@@ -156,3 +168,8 @@ class SafetyGymEnv(EnvBase):
                 "reward": base_reward_spec,
             },shape=self.batch_size
         )
+    def render(self, mode="human"):
+        if self.batch_size:
+            raise NotImplementedError("Rendering for batch environments is not implemented yet")
+        else:
+            return self._env.render(mode=mode)

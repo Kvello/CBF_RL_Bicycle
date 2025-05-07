@@ -33,9 +33,8 @@ from envs.integrator import(
     plot_integrator_trajectories,
     plot_value_function_integrator
 )
-from envs import make_env
+from envs import make_env, SafetyGymEnv
 from models.factory import PolicyFactory, ValueFactory
-from torchrl.envs import GymEnv
 import safety_gym
 from torchrl.envs.utils import step_mdp
 import time
@@ -317,8 +316,8 @@ class Runner():
         render_args = self.args.get("render", {})
         if render_args.get("render", False):
         # rendering only works with unbatched GymEnvs
-            env = GymEnv(self.args["env"]["name"],device=self.device)
-            env.seed(self.args["env"]["cfg"]["seed"])
+            env = SafetyGymEnv(self.args["env"]["name"])
+            env.set_seed(self.args["env"]["cfg"]["seed"])
             td = env.reset()
             dt = 1.0/render_args.get("fps",60)
             for _ in range(render_args["num_frames"]):

@@ -105,7 +105,7 @@ def make_safety_gym_env(env_id: str, cfg: dict, device: Optional[torch.device]=t
     
     base_env = SafetyGymEnv(env_id,
             num_envs=cfg.get("num_parallel_env",None))
-    base_env._env.seed(cfg["seed"])
+    base_env.set_seed(cfg["seed"])
     return TransformedEnv(
         base_env,
         StepCounter(max_steps=cfg["max_steps"])
