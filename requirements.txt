@@ -16,3 +16,4 @@ wandb
 pytest
 tqdm
 tensorboard
+hydra-core

@@ -1,3 +1,12 @@
+load_policy: null
+load_value: null
+load_cdf: null
+train: false
+eval: false
+save: false
+track: false
+wandb_project: "hippo"
+experiment_name: null
 
 env:
   name: Safexp-PointGoal1-v0
