@@ -388,12 +388,12 @@ if __name__ == "__main__":
         runner.load(value_path=args["value_path"])
     if args.get("train", False): 
         if args.get("track", False):
-            wandb.init(project=args.get("wandb_project", "hippo"),
+            wandb.init(project=args.get("wandb_project", args["env"]["name"] + "-" + args["algorithm"]["name"]),
                     sync_tensorboard=True,
                     monitor_gym=True,
                     save_code=True,
                     name=args.get("experiment_name", None),
-                    config = {**args,"method":"hippo"})
+                    config = {**args})
         runner.train()
     if args.get("save", False):
         env_name = args["env"]["name"]
