@@ -35,7 +35,7 @@ class PolicyEvaluator:
         with set_exploration_type(ExplorationType.DETERMINISTIC), torch.no_grad():
             # execute a rollout with the trained policy
             eval_rollout = self.env.rollout(
-                self.eval_steps, self.policy_module,break_when_any_done=True
+                self.eval_steps, self.policy_module,break_when_any_done=False
             )
             for key in self.keys_to_log:
                 if key in eval_rollout["next"]:
