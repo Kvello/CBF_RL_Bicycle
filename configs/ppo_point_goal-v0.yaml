@@ -14,7 +14,7 @@ env:
 models:
   cdf_net:
     name: feedforward
-    eps: 1.0e-3
+    eps: 0.0
     layers: [128, 64, 32]
     activation: relu 
 
