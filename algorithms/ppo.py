@@ -308,13 +308,12 @@ class PPO(RLAlgoBase):
         if "collision_states" in tensordict:
             # Handle the case where the collision buffer is empty
             # (Only in the beginning of training)
-            unsafe_states = tensordict["collision_states"]
-            unsafe_CDF_prediction = loss_module.critic_network.module(unsafe_states)
-            target_unsafe_value = unsafe_states["collision_value"] # This will nominally be -1
+            collision_states = tensordict["collision_states"]
+            CDF_collision_pred = loss_module.critic_network.module(collision_states)
             loss_vals["loss_CDF_supervised"] = (
                 torch.nn.MSELoss(reduction='mean')(
-                    unsafe_CDF_prediction,
-                    target_unsafe_value,
+                    CDF_collision_pred,
+                    tensordict["collision_value"],
                 )
             )*self.supervision_coef
         else:
