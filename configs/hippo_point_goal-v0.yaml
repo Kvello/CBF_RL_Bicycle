@@ -55,8 +55,7 @@ algorithm:
     eta_min: 1.0e-6
 
 evaluation:
-  num_eval_episodes: 32 #TODO
-  freq: 1000 #TODO
+  eval_steps: 1000
   track_bellman_violation: false
 
 render:
