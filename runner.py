@@ -131,7 +131,10 @@ class Runner():
         self.params = get_config_value(args["env"]["cfg"], "params", default_params, warn_str) 
 
         self.env = make_env(args["env"]["name"], args["env"]["cfg"], self.device)
-        
+        eval_env_cfg = args["env"]["cfg"].copy()
+        eval_env_cfg["num_parallel_env"] = 1
+        self.eval_env = make_env(args["env"]["name"], eval_env_cfg, self.device) 
+        self.eval_env.transform = self.env.transform.clone()
         #######################
         # Models:
         #######################
@@ -198,10 +201,9 @@ class Runner():
             in_keys=[safety_obs_key],
             out_keys=["V1"],
         )
-
-        self.evaluator = PolicyEvaluator(env=self.env,
+        self.evaluator = PolicyEvaluator(env=self.eval_env,
                                     policy_module=self.policy_module,
-                                    eval_steps=self.args["env"]["cfg"]["max_steps"],
+                                    eval_steps=args["evaluation"]["eval_steps"],
                                     keys_to_log=[self.args["algorithm"]["primary_reward_key"],
                                                 self.args["algorithm"]["secondary_reward_key"],
                                                 "step_count"])
@@ -327,7 +329,11 @@ class Runner():
             cfg = self.args["env"]["cfg"]
             # rendering only works with unbatched GymEnvs
             cfg["num_parallel_env"] = 1
-            env = make_env(self.args["env"]["name"],cfg)
+            # For rendering, we simulate on CPU
+            device = torch.device("cpu")
+            env = make_env(self.args["env"]["name"],cfg,device)
+            policy_cpu = self.policy_module.to(device)
+
             #resetting has to happen before camera id is obtained
             td = env.reset()
 
@@ -358,7 +364,7 @@ class Runner():
                     time.sleep(dt)
                     env.render()
                 with torch.no_grad():
-                    td = self.policy_module(td)
+                    td = policy_cpu(td)
                 td = env.step(td)
                 td = step_mdp(td)
                 done = td["done"].any()
