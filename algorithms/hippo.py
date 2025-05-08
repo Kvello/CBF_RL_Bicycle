@@ -258,8 +258,6 @@ class HierarchicalPPO(PPO):
                                 Please use one of the following: linear, cosine, step")
         else:
             self.scheduler = None
-        print("Training with config:")
-        print(self.config)
         logs = defaultdict(list)
         pbar = tqdm(total=total_frames)
         for i, tensordict_data in enumerate(collector):

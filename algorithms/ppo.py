@@ -190,8 +190,6 @@ class PPO(RLAlgoBase):
                                 Please use one of the following: linear, cosine, step")
         else:
             self.scheduler = None
-        print("Training with config:")
-        print(self.config)
         logs = defaultdict(list)
         eval_logs = defaultdict(list)
         pbar = tqdm(total=total_frames)
