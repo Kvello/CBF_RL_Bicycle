@@ -90,14 +90,12 @@ def make_double_integrator_env(name:str, cfg: dict, device:Optional[torch.device
     env.transform[4].init_stats(num_iter=1000,reduce_dim=(0,1),cat_dim=1)
     return env
 
-def make_safety_gym_env(env_id: str, cfg: dict, device: Optional[torch.device]=torch.device("cpu")) -> EnvBase:
+def make_safety_gym_env(env_id: str, cfg: dict,device=torch.device("cpu")) -> EnvBase:
     """Creates a Safety Gym environment.
 
     Args:
         env_id (str): The ID of the Safety Gym environment.
         cfg (dict): Configuration dictionary.
-        device (torch.device): Device to use.
-
     Returns:
         EnvBase: The Safety Gym environment.
     """
@@ -109,7 +107,7 @@ def make_safety_gym_env(env_id: str, cfg: dict, device: Optional[torch.device]=t
     return TransformedEnv(
         base_env,
         StepCounter(max_steps=cfg["max_steps"])
-    ).to(device)
+    ).to(torch.device("cpu"))
 
 for env_id in gym.envs.registry:
     if env_id.startswith("Safexp"):
