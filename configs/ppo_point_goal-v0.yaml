@@ -59,6 +59,9 @@ evaluation:
 render:
   render: true
   mode: record # record, human 
-  camera: track
+  camera: track #only used if mode is record
+  render_kwargs: #Only used if mode is record
+    width: 256
+    height: 256
   num_frames: 1000
   fps : 30
