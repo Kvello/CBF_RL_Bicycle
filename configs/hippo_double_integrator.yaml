@@ -24,7 +24,7 @@ models:
     name: feedforward
     eps: 1.0e-3
     layers: [64, 64]
-    activation: relu  # specify as string; your code maps to nn.ReLU()
+    activation: relu
 
   value_net:
     name: feedforward
