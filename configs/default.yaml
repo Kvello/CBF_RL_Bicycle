@@ -1,7 +1,7 @@
 config_file: hippo_double_integrator.yaml
-load_policy: null
-load_value: null
-load_cdf: null
+policy_path: null
+value_path: null
+cdf_path: null
 train: false
 eval: false
 save: false
