@@ -74,7 +74,7 @@ plot:
       high: 1.0
 
 evaluation:
-  eval_steps: 1000 # Minimum number of steps over which to average the evaluation
+  eval_steps: 1000 # Number of steps to evaluate
   track_bellman_violation: true
   bellman_eval_res: 10
   state_space:
