@@ -303,8 +303,8 @@ def plot_integrator_trajectories(env: EnvBase,
     i=0
     params = env.params
     value_key = value_module.out_keys[0] if value_module is not None else None
-    max_x1 = params["max_x1"]
-    max_x2 = params["max_x2"]
+    max_x1 = params["max_x1"].cpu().numpy()
+    max_x2 = params["max_x2"].cpu().numpy()
     print(f"Generating {num_trajectories} trajectories")
     while i < num_trajectories:
         rollouts =  env.rollout(rollout_len, 
@@ -345,7 +345,7 @@ def plot_integrator_trajectories(env: EnvBase,
         x_vals = torch.linspace(x1_low, x1_high, ceil(resolution*(x1_high-x1_low)))
         y_vals = torch.linspace(x2_low, x2_high, ceil(resolution*(x2_high-x2_low)))
         mesh = torch.meshgrid(x_vals, y_vals,indexing="xy")
-        inputs = torch.stack([m.flatten() for m in mesh],dim=-1)
+        inputs = torch.stack([m.flatten() for m in mesh],dim=-1).to(value_module.device)
         td = TensorDict({
             "x1": inputs[...,0],
             "x2": inputs[...,1],
