@@ -27,6 +27,8 @@ class PolicyEvaluator:
                  keys_to_log:List[str] = ["reward","step_count"],
                  eval_steps:int = 1000):
         self.env = env
+        if self.env.batch_size not in [torch.Size([1]),torch.Size([])]:
+            raise ValueError("PolicyEvaluator only works with batch size 1 or no batch size")
         self.policy_module = policy_module
         self.keys_to_log = keys_to_log
         self.eval_steps = eval_steps
@@ -34,14 +36,16 @@ class PolicyEvaluator:
         logs = {}
         with set_exploration_type(ExplorationType.DETERMINISTIC), torch.no_grad():
             # execute a rollout with the trained policy
+            # It is intended to be used with a single environment
             eval_rollout = self.env.rollout(
                 self.eval_steps, self.policy_module,break_when_any_done=False
             )
+            step_counts = eval_rollout["step_count"][eval_rollout["next", "done"] == True]
             for key in self.keys_to_log:
                 if key in eval_rollout["next"]:
                     if key == "step_count":
                         logs[f"eval {key}(average)"] = (
-                            eval_rollout[key].max(dim=1).values.to(torch.float32).mean().item()
+                            step_counts.to(torch.float32).mean().item()
                         )
                     else:
                         logs[f"eval {key}(average)"] = (
@@ -49,7 +53,6 @@ class PolicyEvaluator:
                         )
                 elif key in eval_rollout:
                     logs[f"eval {key}(average)"] = (eval_rollout[key].to(torch.float32).mean().item())
-            del eval_rollout
         return logs
 
     
