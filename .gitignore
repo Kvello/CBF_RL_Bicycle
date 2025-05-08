@@ -10,3 +10,4 @@ wandb/
 *.png
 .vscode/
 outputs
+*.mp4

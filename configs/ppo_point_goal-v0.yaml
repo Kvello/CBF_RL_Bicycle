@@ -58,5 +58,7 @@ evaluation:
 
 render:
   render: true
+  mode: record # record, human 
+  camera: track
   num_frames: 1000
   fps : 30
