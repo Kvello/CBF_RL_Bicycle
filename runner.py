@@ -318,8 +318,9 @@ class Runner():
         render_args = self.args.get("render", {})
         if render_args.get("render", False):
         # rendering only works with unbatched GymEnvs
-            env = SafetyGymEnv(self.args["env"]["name"])
-            env.set_seed(self.args["env"]["cfg"]["seed"])
+            cfg = self.args["env"]["cfg"]
+            cfg["num_parallel_env"] = 1
+            env = make_env(self.args["env"]["name"],cfg)
             td = env.reset()
             dt = 1.0/render_args.get("fps",60)
             for _ in range(render_args["num_frames"]):
