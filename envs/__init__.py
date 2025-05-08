@@ -86,8 +86,12 @@ def make_double_integrator_env(name:str, cfg: dict, device:Optional[torch.device
             *transforms
         )
     ).to(device)
-    env.transform[3].init_stats(num_iter=1000,reduce_dim=(0,1),cat_dim=1)
-    env.transform[4].init_stats(num_iter=1000,reduce_dim=(0,1),cat_dim=1)
+    if cfg.get("num_parallel_env",1) > 1:
+        env.transform[3].init_stats(num_iter=1000,reduce_dim=(0,1),cat_dim=1)
+        env.transform[4].init_stats(num_iter=1000,reduce_dim=(0,1),cat_dim=1)
+    else:
+        env.transform[3].init_stats(num_iter=1000,reduce_dim=(0,),cat_dim=0)
+        env.transform[4].init_stats(num_iter=1000,reduce_dim=(0,),cat_dim=0)
     return env
 
 def make_safety_gym_env(env_id: str, cfg: dict,device=torch.device("cpu")) -> EnvBase:
@@ -100,14 +104,14 @@ def make_safety_gym_env(env_id: str, cfg: dict,device=torch.device("cpu")) -> En
         EnvBase: The Safety Gym environment.
     """
 
-    
     base_env = SafetyGymEnv(env_id,
-            num_envs=cfg.get("num_parallel_env",1))
+            num_envs=cfg.get("num_parallel_env",1),
+            device=device)
     base_env.set_seed(cfg["seed"])
     return TransformedEnv(
         base_env,
         StepCounter(max_steps=cfg["max_steps"])
-    ).to(torch.device("cpu"))
+    ).to(device)
 
 for env_id in gym.envs.registry:
     if env_id.startswith("Safexp"):

@@ -22,9 +22,9 @@ class SafetyGymEnv(EnvBase):
         self,
         env_name: str,
         num_envs: int = 1,
+        device: torch.device = torch.device("cpu"),
     ):
-        # All gym environments must run on the CPU
-        super().__init__(device=torch.device("cpu"))
+        super().__init__(device=device)
         if num_envs > 16:
             # Above 16 environments, we use synchronous mode
             async_envs = False
