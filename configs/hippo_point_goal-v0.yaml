@@ -33,7 +33,7 @@ models:
 algorithm:
   name: hippo
   num_epochs: 10
-  frames_per_batch: 8192   # 2**13
+  frames_per_batch: 32768   # 2**15
   sub_batch_size: 256      # 2**8
   max_grad_norm: 1.0
   total_frames: 2097152     # 2**21
@@ -42,7 +42,7 @@ algorithm:
   lmbda2: 0.95
   critic_coef: 1.0
   supervision_coef: 1.0
-  collision_buffer_size: 8192  # same as frames_per_batch
+  collision_buffer_size: 32768  # same as frames_per_batch
   primary_reward_key: neg_cost
   secondary_reward_key: reward
   entropy_coef: 0.01
@@ -61,5 +61,10 @@ evaluation:
 
 render:
   render: true
+  mode: record # record, human 
+  camera: track #only used if mode is record
+  render_kwargs: #Only used if mode is record
+    width: 256
+    height: 256
   num_frames: 1000
   fps : 30
