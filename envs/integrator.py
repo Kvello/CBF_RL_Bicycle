@@ -51,7 +51,7 @@ class DoubleIntegratorEnv(EnvBase):
                  seed=None, 
                  device=None):
         self.device = device
-        if batch_size is None:
+        if batch_size is None or batch_size == 1:
             self.batch_size = []
         else:
             self.batch_size = [batch_size]
@@ -397,7 +397,7 @@ def plot_value_function_integrator(max_x1:float, max_x2:float,
     linspace_x2 = torch.linspace(x2_low, x2_high, ceil(resolution*(x2_high-x2_low)))
     linspaces = [linspace_x1, linspace_x2]
     mesh = torch.meshgrid(*linspaces,indexing="xy")
-    inputs = torch.stack([m.flatten() for m in mesh],dim=-1)
+    inputs = torch.stack([m.flatten() for m in mesh],dim=-1).to(value_module.device)
     td = TensorDict({
         "x1": inputs[...,0],
         "x2": inputs[...,1],
