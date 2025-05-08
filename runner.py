@@ -375,7 +375,7 @@ class Runner():
             print("Video saved to: ", video_path)
             if render_mode == "record":
                 if wandb.run is not None:
-                    wandb.log({"video": wandb.Video(video_path, fps=fps, format="mp4")})
+                    wandb.log({"video": wandb.Video(video_path, format="mp4")})
                 
 
                 
