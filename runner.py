@@ -370,11 +370,11 @@ def main(cfg: DictConfig) -> None:
     args["env"]["cfg"]["seed"] = args["seed"]
     runner = Runner(device=device)
     runner.setup(args)
-    if args.get("cdf_path") is not None:
+    if args.get("cdf_path",None) is not None:
         runner.load(cdf_path=args["cdf_path"])
-    if args.get("policy_path") is not None:
+    if args.get("policy_path",None) is not None:
         runner.load(policy_path=args["policy_path"])
-    if args.get("value_path") is not None:
+    if args.get("value_path",None) is not None:
         runner.load(value_path=args["value_path"])
     if args.get("train", False): 
         if args.get("track", False):
