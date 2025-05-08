@@ -40,6 +40,10 @@ from torchrl.envs.utils import step_mdp
 import time
 import hydra
 from omegaconf import DictConfig, OmegaConf
+from utils.utils import get_config_value
+from warnings import warn
+import imageio
+import numpy as np
 
 ACTIVATION_MAP = {
     "relu": nn.ReLU(),
@@ -257,13 +261,16 @@ class Runner():
         if self.args is None:
             raise ValueError("Setup the runner before loading")
         if value_path is not None:
-            self.value_module.load_state_dict(torch.load(value_path,map_location=self.device))
+            state_dict = torch.load(value_path,map_location=self.device,weights_only=True)
+            self.value_module.load_state_dict(state_dict)
             print("Value network loaded")       
         if policy_path is not None:
-            self.policy_module.load_state_dict(torch.load(policy_path,map_location=self.device))
+            state_dict = torch.load(policy_path,map_location=self.device,weights_only=True)
+            self.policy_module.load_state_dict(state_dict)
             print("Policy loaded")
         if cdf_path is not None:
-            self.cdf_module.load_state_dict(torch.load(cdf_path,map_location=self.device))
+            state_dict = torch.load(cdf_path,map_location=self.device,weights_only=True)
+            self.cdf_module.load_state_dict(state_dict)
             print("CDF network loaded")
     # Bellman violation uses a custom env with a different batch size
     def env_maker(self, batch_size:int, device:Optional[torch.device]=None):
@@ -317,15 +324,39 @@ class Runner():
     def render_safety_gym_results(self):
         render_args = self.args.get("render", {})
         if render_args.get("render", False):
-        # rendering only works with unbatched GymEnvs
             cfg = self.args["env"]["cfg"]
+            # rendering only works with unbatched GymEnvs
             cfg["num_parallel_env"] = 1
             env = make_env(self.args["env"]["name"],cfg)
+            #resetting has to happen before camera id is obtained
             td = env.reset()
-            dt = 1.0/render_args.get("fps",60)
-            for _ in range(render_args["num_frames"]):
-                time.sleep(dt)
-                env.render()
+
+            warn_str = "Warning: rendering mode not set. Defaulting to record"
+            render_mode = get_config_value(render_args, "mode", "record", warn_str)
+            if render_mode not in ["human", "record"]:
+                warn_str = f"Warning: Render mode {render_mode} not supported. Defaulting to 'record'"
+                warn(warn_str)
+                render_mode = "record"
+            if render_mode == "record":
+                frames = []
+                warn_str = "Warning: camera not set. Defaulting to 'track'"
+                camera = get_config_value(render_args, "camera", "track", warn_str)
+                camera_id = env.camera_name2id(camera)
+            warn_str = "Warning: fps not set. Defaulting to 60"
+            fps = get_config_value(render_args, "fps", 60, warn_str)
+            warn_str = "Warning: num_frames not set. Defaulting to 1000"
+            num_frames = get_config_value(render_args, "num_frames", 1000, warn_str)
+            
+            mode = "rgb_array" if render_mode == "record" else render_mode
+            dt = 1.0/fps
+            for _ in range(num_frames):
+                if render_mode == "record":
+                    render_kwargs = render_args.get("render_kwargs", {})
+                    frame = env.render(mode=mode, camera_id=camera_id,**render_kwargs)
+                    frames.append(frame)
+                else:
+                    time.sleep(dt)
+                    env.render()
                 with torch.no_grad():
                     td = self.policy_module(td)
                 td = env.step(td)
@@ -334,6 +365,20 @@ class Runner():
                 if done:
                     td = env.reset()
             env.close()
+            now = datetime.now().strftime("%Y%m%d-%H%M%S")
+            video_path = (
+                self.args["env"]["name"] + "_" +
+                self.args["algorithm"]["name"] + 
+                "_video_" +
+                now + ".mp4"
+            )
+            imageio.mimsave(video_path, frames, fps=fps)
+            print("Video saved to: ", video_path)
+            if render_mode == "record":
+                if wandb.run is not None:
+                    wandb.log({"video": wandb.Video(video_path, format="mp4")})
+                
+
                 
 
 multiprocessing.set_start_method("spawn", force=True)
@@ -370,20 +415,21 @@ def main(cfg: DictConfig) -> None:
     args["env"]["cfg"]["seed"] = args["seed"]
     runner = Runner(device=device)
     runner.setup(args)
+    if args.get("wandb", False):
+        wandb.init(project=args.get("wandb_project", args["env"]["name"] + "-" + args["algorithm"]["name"]),
+                sync_tensorboard=True,
+                monitor_gym=True,
+                save_code=True,
+                name=args.get("experiment_name", None),
+                config = {**args})
+    weights_dir = args.get("weight_dir", "models/weights/")
     if args.get("cdf_path",None) is not None:
-        runner.load(cdf_path=args["cdf_path"])
+        runner.load(cdf_path=weights_dir + args["cdf_path"])
     if args.get("policy_path",None) is not None:
-        runner.load(policy_path=args["policy_path"])
+        runner.load(policy_path=weights_dir + args["policy_path"])
     if args.get("value_path",None) is not None:
-        runner.load(value_path=args["value_path"])
+        runner.load(value_path=weights_dir + args["value_path"])
     if args.get("train", False): 
-        if args.get("track", False):
-            wandb.init(project=args.get("wandb_project", args["env"]["name"] + "-" + args["algorithm"]["name"]),
-                    sync_tensorboard=True,
-                    monitor_gym=True,
-                    save_code=True,
-                    name=args.get("experiment_name", None),
-                    config = {**args})
         runner.train()
     if args.get("save", False):
         env_name = args["env"]["name"]

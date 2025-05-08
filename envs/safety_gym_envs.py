@@ -168,8 +168,21 @@ class SafetyGymEnv(EnvBase):
                 "reward": base_reward_spec,
             },shape=self.batch_size
         )
-    def render(self, mode="human"):
+    def render(self, mode="human", camera_id=0, **kwargs):
         if self.batch_size:
             raise NotImplementedError("Rendering for batch environments is not implemented yet")
         else:
-            return self._env.render(mode=mode)
+            return self._env.render(mode=mode,camera_id=camera_id,**kwargs)
+    def close(self):
+        self._env.close()
+        super().close()
+    def camera_name2id(self, camera_name):
+        """Converts a camera name to a camera ID.
+        Remember to reset the environment before calling this function. 
+        """
+        return self._env.model.camera_name2id(camera_name)
+    def camera_id2name(self, camera_id):
+        """Converts a camera ID to a camera name.
+        Remember to reset the environment before calling this function.
+        """
+        return self._env.model.camera_id2name(camera_id)

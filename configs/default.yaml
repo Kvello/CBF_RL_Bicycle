@@ -1,11 +1,12 @@
 config_file: hippo_double_integrator.yaml
+weights_dir: /home/markus/Documents/CBF_RL_Bicycle/models/weights/
 policy_path: null
 value_path: null
 cdf_path: null
 train: false
 eval: false
 save: false
-track: false
+wandb: false
 visualize: false
 experiment_name: null
 seed: 3
