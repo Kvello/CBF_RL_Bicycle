@@ -366,7 +366,7 @@ class Runner():
             env.close()
             now = datetime.now().strftime("%Y%m%d-%H%M%S")
             video_path = (
-                self.args["env"]["name"] + 
+                self.args["env"]["name"] + "_" +
                 self.args["algorithm"]["name"] + 
                 "_video_" +
                 now + ".mp4"
