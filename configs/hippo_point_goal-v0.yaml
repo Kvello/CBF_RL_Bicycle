@@ -36,7 +36,7 @@ algorithm:
   frames_per_batch: 32768   # 2**15
   sub_batch_size: 256      # 2**8
   max_grad_norm: 1.0
-  total_frames: 2097152     # 2**21
+  total_frames: 65536     # 2**16
   clip_epsilon: 0.2
   lmbda1: 0.1
   lmbda2: 0.95
@@ -64,7 +64,7 @@ render:
   mode: record # record, human 
   camera: track #only used if mode is record
   render_kwargs: #Only used if mode is record
-    width: 256
-    height: 256
+    width: 640
+    height: 480
   num_frames: 1000
   fps : 30

@@ -61,7 +61,7 @@ render:
   mode: record # record, human 
   camera: track #only used if mode is record
   render_kwargs: #Only used if mode is record
-    width: 256
-    height: 256
+    width: 640
+    height: 480
   num_frames: 1000
   fps : 30
