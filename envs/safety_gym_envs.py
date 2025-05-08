@@ -168,11 +168,11 @@ class SafetyGymEnv(EnvBase):
                 "reward": base_reward_spec,
             },shape=self.batch_size
         )
-    def render(self, mode="human", camera_id=0,):
+    def render(self, mode="human", camera_id=0, **kwargs):
         if self.batch_size:
             raise NotImplementedError("Rendering for batch environments is not implemented yet")
         else:
-            return self._env.render(mode=mode,camera_id=camera_id)
+            return self._env.render(mode=mode,camera_id=camera_id,**kwargs)
     def close(self):
         self._env.close()
         super().close()

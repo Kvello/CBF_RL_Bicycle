@@ -340,7 +340,7 @@ class Runner():
             if render_mode == "record":
                 frames = []
                 warn_str = "Warning: camera not set. Defaulting to 'track'"
-                camera = get_config_value(render_args, "cameras", "track", warn_str)
+                camera = get_config_value(render_args, "camera", "track", warn_str)
                 camera_id = env.camera_name2id(camera)
             warn_str = "Warning: fps not set. Defaulting to 60"
             fps = get_config_value(render_args, "fps", 60, warn_str)
@@ -351,7 +351,8 @@ class Runner():
             dt = 1.0/fps
             for _ in range(num_frames):
                 if render_mode == "record":
-                    frame = env.render(mode=mode, camera_id=camera_id)
+                    render_kwargs = render_args.get("render_kwargs", {})
+                    frame = env.render(mode=mode, camera_id=camera_id,**render_kwargs)
                     frames.append(frame)
                 else:
                     time.sleep(dt)
