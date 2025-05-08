@@ -56,7 +56,10 @@ algorithm:
   loss_critic_type: smooth_l1
   optim_kwargs:
     lr: 1.0e-4
-  scheduler: null
+  scheduler: 
+    name: cosine
+    last_epoch: -1
+    eta_min: 1.0e-6
 
 
 plot:
