@@ -17,7 +17,6 @@ import torch
 import numpy as np
 from tensordict import TensorDict
 import gymnasium as gym
-from torchrl.envs import GymEnv
 
 class OldStepAPIWrapper(gym.Wrapper):
     def step(self, action):
