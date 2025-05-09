@@ -42,19 +42,19 @@ task_config:
   # Constraints
   done_on_violation: False
   use_constraint_penalty: False
-  constraint_penalty: -1
+  constraint_penalty: 0.0
   constraints:
     - constraint_form: bounded_constraint
       upper_bounds:
-        - 1.0
-        - 1.0
+        - 1.5
+        - 10.0
         - 0.7854 # 45 degrees
-        - 0.2
+        - 10.0
       lower_bounds:
-        - -1.0
-        - -1.0
+        - -1.5
+        - -10.0
         - -0.7854 # -45 degrees
-        - -0.2
+        - -10.0
       constrained_variable: state
   # Disturbances
   disturbances: null
