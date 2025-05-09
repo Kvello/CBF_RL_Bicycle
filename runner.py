@@ -398,10 +398,22 @@ class Runner():
         policy_cpu = self.policy_module.to(device)
         td = env.reset()
         frames = []
+        x = []
+        x_dot = []
+        theta = []
+        theta_dot = []
         warn_str = "Warning: fps not set. Defaulting to 60"
         fps = get_config_value(render_args, "fps", 60, warn_str)
         warn_str = "Warning: num_frames not set. Defaulting to 1000"
         num_frames = get_config_value(render_args, "num_frames", 1000, warn_str)
+
+        colors = plt.cm.tab10.colors 
+        plt.figure(figsize=(10, 10))
+        ax1 = plt.subplot(2, 2, 1)
+        ax2 = plt.subplot(2, 2, 2)
+        ax3 = plt.subplot(2, 2, 3)
+        ax4 = plt.subplot(2, 2, 4)
+        plot_num = 0
         for _ in range(num_frames):
             frame = env.render()
             frames.append(frame)
@@ -409,9 +421,25 @@ class Runner():
                 td = policy_cpu(td)
             td = env.step(td)
             td = step_mdp(td)
+            x.append(td["observation"][0].item())
+            x_dot.append(td["observation"][1].item())
+            theta.append(td["observation"][2].item())
+            theta_dot.append(td["observation"][3].item())
             done = td["done"].any()
             if done:
                 td = env.reset()
+                if plot_num < len(colors):
+                    color = colors[plot_num]
+                    plot_num += 1
+                    ax1.plot(x, color=color)
+                    ax2.plot(x_dot, color=color)
+                    ax3.plot(theta, color=color)
+                    ax4.plot(theta_dot, color=color)
+                    x = []
+                    x_dot = []
+                    theta = []
+                    theta_dot = []
+        
         env.close()
         now = datetime.now().strftime("%Y%m%d-%H%M%S")
         video_path = (
@@ -420,10 +448,32 @@ class Runner():
             "_video_" +
             now + ".mp4"
         )
+        ax1.set_title(r"$x$")
+        ax2.set_title(r"$\dot{x}$")
+        ax3.set_title(r"$\theta$")
+        ax4.set_title(r"$\dot{\theta}$")
+        ax1.grid()
+        ax2.grid()
+        ax3.grid()
+        ax4.grid()
+        ax1.set_xlabel("Step")
+        ax1.set_ylabel(r"$[m]$")
+        ax2.set_xlabel("Step")
+        ax2.set_ylabel(r"$[\frac{m}{s}]$")
+        ax3.set_xlabel("Step")
+        ax3.set_ylabel(r"$[\text{rad}]$")
+        ax4.set_xlabel("Step")
+        ax4.set_ylabel(r"$[\frac{\text{rad}}{s}]$")
+        plt.suptitle("Cartpole")
+        plt.tight_layout()
         imageio.mimsave(video_path, frames, fps=fps)
         print("Video saved to: ", video_path)
         if wandb.run is not None:
             wandb.log({"video": wandb.Video(video_path, format="mp4")})
+            wandb.log({"figures": wandb.Image(plt)})
+        else:
+            plt.savefig("results/ppo_safe_cartpole" +\
+                datetime.now().strftime("%Y%m%d-%H%M%S") + ".pdf")
 
                 
 
