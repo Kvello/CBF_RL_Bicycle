@@ -224,8 +224,6 @@ class PPO(RLAlgoBase):
     def _update_collision_buffer(self, td: TensorDict):
         """
         Update the collision buffer with the current tensordict data.
-        Note: We assume that the data from the collector is split into trajectories
-        by split_trajs = True.
         
         Args:
             td (TensorDict): The data tensor dictionary.
@@ -242,7 +240,7 @@ class PPO(RLAlgoBase):
             return
         value_target_collision_states = (
             td["next",self.primary_reward_key][td["next",self.primary_reward_key] < 0.0]
-        ).unsqueeze(-1)
+        ).unsqueeze(-1) # This is -1 if normal safety preserving task structure is used
         new_states = TensorDict({
             "collision_states": collision_states,
             "collision_value": value_target_collision_states,
@@ -296,11 +294,12 @@ class PPO(RLAlgoBase):
                 for key in self.loss_value_log_keys:
                     logs[key] += loss_vals[key].item()
         for key in self.loss_value_log_keys:
-            logs[key] /= self.num_epochs
+            logs[key] /= self.num_epochs*(self.frames_per_batch // self.sub_batch_size)
         for key in self.reward_keys:
             logs[key] = tensordict_data["next",key].to(torch.float32).mean().item()
+        step_counts = tensordict_data["step_count"][tensordict_data["next", "done"] == True]
         logs["step_count(average)"] = (
-            tensordict_data["step_count"].max(dim=1).values.to(torch.float32).mean().item()
+            step_counts.to(torch.float32).mean().item()
         )
         logs["lr"] = optim.param_groups[0]["lr"]
         if eval_func is not None:
