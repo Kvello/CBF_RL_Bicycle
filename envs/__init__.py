@@ -1,7 +1,5 @@
 ENV_REGISTRY = {}
 from torchrl.envs import EnvBase
-from envs.safety_gym_envs import SafetyGymEnv
-from envs.safe_control_gym_envs import CartPoleEnv
 from typing import Optional
 import torch
 from tensordict import TensorDict
@@ -17,7 +15,6 @@ from torchrl.envs.transforms import (
     DoubleToFloat,
     StepCounter,
 )
-import gym
 
 def register_env(name):
     def decorator(cls_or_fn):
@@ -93,7 +90,29 @@ def make_double_integrator_env(name:str, cfg: dict, device:Optional[torch.device
         env.transform[3].init_stats(num_iter=1000,reduce_dim=(0,),cat_dim=0)
         env.transform[4].init_stats(num_iter=1000,reduce_dim=(0,),cat_dim=0)
     return env
+try:
+    from envs.safe_control_gym_envs import CartPoleEnv
+    @register_env("cartpole")
+    def make_cartpole_env(env_id: str, cfg: dict, device:Optional[torch.device]) -> EnvBase:
+        """Creates a CartPole environment.
 
+        Args:
+            env_id (str): The ID of the CartPole environment.
+            cfg (dict): Configuration dictionary.
+        Returns:
+            EnvBase: The CartPole environment.
+        """
+        base_env = CartPoleEnv(
+            num_envs=cfg.get("num_parallel_env",1),
+            device=device)
+        base_env.set_seed(cfg["seed"])
+        return TransformedEnv(
+            base_env,
+            StepCounter(max_steps=cfg["max_steps"])
+        ).to(device)
+except ImportError:
+    print("Safe Control Gym not installed. Skipping CartPole environment.")
+    pass
 def make_safety_gym_env(env_id: str, cfg: dict,device=torch.device("cpu")) -> EnvBase:
     """Creates a Safety Gym environment.
 
@@ -113,25 +132,14 @@ def make_safety_gym_env(env_id: str, cfg: dict,device=torch.device("cpu")) -> En
         StepCounter(max_steps=cfg["max_steps"])
     ).to(device)
 
-for env_id in gym.envs.registry:
-    if env_id.startswith("Safexp"):
-        # Register all Safety Gym environments
-        ENV_REGISTRY[env_id] = make_safety_gym_env
-@register_env("cartpole")
-def make_cartpole_env(env_id: str, cfg: dict, device:Optional[torch.device]) -> EnvBase:
-    """Creates a CartPole environment.
-
-    Args:
-        env_id (str): The ID of the CartPole environment.
-        cfg (dict): Configuration dictionary.
-    Returns:
-        EnvBase: The CartPole environment.
-    """
-    base_env = CartPoleEnv(
-        num_envs=cfg.get("num_parallel_env",1),
-        device=device)
-    base_env.set_seed(cfg["seed"])
-    return TransformedEnv(
-        base_env,
-        StepCounter(max_steps=cfg["max_steps"])
-    ).to(device)
+try:
+    import safety_gym
+    from envs.safety_gym_envs import SafetyGymEnv
+    import gym
+    for env_id in gym.envs.registry:
+        if env_id.startswith("Safexp"):
+            # Register all Safety Gym environments
+            ENV_REGISTRY[env_id] = make_safety_gym_env
+except ImportError:
+    print("Safety Gym not installed. Skipping Safety Gym environments.")
+    pass
