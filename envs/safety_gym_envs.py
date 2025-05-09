@@ -8,8 +8,6 @@ from torchrl.data.tensor_specs import (
     UnboundedContinuousTensorSpec,
     DiscreteTensorSpec,
 )
-import gym
-import safety_gym
 import numpy as np
 from torchrl.envs.libs.gym import _gym_to_torchrl_spec_transform
 
@@ -24,6 +22,8 @@ class SafetyGymEnv(EnvBase):
         num_envs: int = 1,
         device: torch.device = torch.device("cpu"),
     ):
+        import gym
+        import safety_gym
         super().__init__(device=device)
         if num_envs > 16:
             # Above 16 environments, we use synchronous mode

@@ -1,8 +1,7 @@
 ENV_REGISTRY = {}
-import gym
-import safety_gym
 from torchrl.envs import EnvBase
 from envs.safety_gym_envs import SafetyGymEnv
+from envs.safe_control_gym_envs import CartPoleEnv
 from typing import Optional
 import torch
 from tensordict import TensorDict
@@ -18,6 +17,7 @@ from torchrl.envs.transforms import (
     DoubleToFloat,
     StepCounter,
 )
+import gym
 
 def register_env(name):
     def decorator(cls_or_fn):
@@ -117,3 +117,21 @@ for env_id in gym.envs.registry:
     if env_id.startswith("Safexp"):
         # Register all Safety Gym environments
         ENV_REGISTRY[env_id] = make_safety_gym_env
+@register_env("cartpole")
+def make_cartpole_env(env_id: str, cfg: dict, device:Optional[torch.device]) -> EnvBase:
+    """Creates a CartPole environment.
+
+    Args:
+        env_id (str): The ID of the CartPole environment.
+        cfg (dict): Configuration dictionary.
+    Returns:
+        EnvBase: The CartPole environment.
+    """
+    base_env = CartPoleEnv(
+        num_envs=cfg.get("num_parallel_env",1),
+        device=device)
+    base_env.set_seed(cfg["seed"])
+    return TransformedEnv(
+        base_env,
+        StepCounter(max_steps=cfg["max_steps"])
+    ).to(device)
