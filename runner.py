@@ -223,6 +223,8 @@ class Runner():
             self.render_safety_gym_results()
         elif self.args["env"]["name"] == "cartpole":
             self.render_safe_control_gym_results()
+        elif self.args["env"]["name"] == "quadrotor":
+            self.render_safe_control_gym_results()
         else:
             raise ValueError("No visualization method for this environment")
     def evaluate(self):
@@ -413,6 +415,11 @@ class Runner():
                 "theta_ref": [],
                 "theta_dot_ref": [],
             }
+        if self.args["env"]["name"] == "quadrotor":
+            state_dict["z"] = []
+            state_dict["z_dot"] = []
+            reference_dict["z_ref"] = []
+            reference_dict["z_dot_ref"] = []
         obs_key = self.args["env"]["cfg"]["obs_signals"][0] # Only one obs key in cartpole
         ref_key = self.args["env"]["cfg"]["ref_signals"][0] # Only one ref key in cartpole
         
@@ -423,11 +430,20 @@ class Runner():
 
         colors = plt.cm.tab10.colors 
         plt.figure(figsize=(10, 10))
-        ax1 = plt.subplot(2, 2, 1)
-        ax2 = plt.subplot(2, 2, 2)
-        ax3 = plt.subplot(2, 2, 3)
-        ax4 = plt.subplot(2, 2, 4)
-        axs = [ax1, ax2, ax3, ax4]
+        if self.args["env"]["name"] == "cartpole":
+            ax1 = plt.subplot(2, 2, 1)
+            ax2 = plt.subplot(2, 2, 2)
+            ax3 = plt.subplot(2, 2, 3)
+            ax4 = plt.subplot(2, 2, 4)
+            axs = [ax1, ax2, ax3, ax4]
+        elif self.args["env"]["name"] == "quadrotor":
+            ax1 = plt.subplot(3, 2, 1)
+            ax2 = plt.subplot(3, 2, 2)
+            ax3 = plt.subplot(3, 2, 3)
+            ax4 = plt.subplot(3, 2, 4)
+            ax5 = plt.subplot(3, 2, 5)
+            ax6 = plt.subplot(3, 2, 6)
+            axs = [ax1, ax2, ax3, ax4, ax5, ax6]
         plot_num = 0
         for _ in range(num_frames):
             frame = env.render()
