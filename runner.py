@@ -438,8 +438,7 @@ class Runner():
             ax3 = plt.subplot(3, 2, 3)
             ax4 = plt.subplot(3, 2, 4)
             ax5 = plt.subplot(3, 2, 5)
-            ax6 = plt.subplot(3, 2, 6)
-            axs = [ax1, ax2, ax3, ax4, ax5, ax6]
+            axs = [ax1, ax2, ax3, ax4, ax5]
         elif self.args["env"]["name"] == "quadrotor":
             ax1 = plt.subplot(4, 2, 1)
             ax2 = plt.subplot(4, 2, 2)
@@ -478,8 +477,8 @@ class Runner():
                         state_dict[s_key] = []
                         reference_dict[r_key] = []
                     if self.args["env"]["name"] == "quadrotor":
-                        ax5.plot(input1, color=color)
-                        ax6.plot(input2, color=color)
+                        ax7.plot(input1, color=color)
+                        ax8.plot(input2, color=color)
                         input1 = []
                         input2 = []
                     else:
@@ -494,15 +493,14 @@ class Runner():
             "_video_" +
             now + ".mp4"
         )
-        ax1.grid()
-        ax2.grid()
-        ax3.grid()
-        ax4.grid()
+        for ax in axs:
+            ax.grid()
         if self.args["env"]["name"] == "cartpole":
             ax1.set_title(r"$x$")
             ax2.set_title(r"$\dot{x}$")
             ax3.set_title(r"$\theta$")
             ax4.set_title(r"$\dot{\theta}$")
+            ax5.set_title("Normalized action")
             ax1.set_xlabel("Step")
             ax1.set_ylabel(r"$[m]$")
             ax2.set_xlabel("Step")
@@ -511,6 +509,8 @@ class Runner():
             ax3.set_ylabel(r"$[\text{rad}]$")
             ax4.set_xlabel("Step")
             ax4.set_ylabel(r"$[\frac{\text{rad}}{s}]$")
+            ax5.set_xlabel("Step")
+            plt.suptitle("Cartpole")
         if self.args["env"]["name"] == "quadrotor":
             ax1.set_title(r"$x$")
             ax2.set_title(r"$\dot{x}$")
@@ -518,6 +518,8 @@ class Runner():
             ax4.set_title(r"$\dot{z}$")
             ax5.set_title(r"$\theta$")
             ax6.set_title(r"$\dot{\theta}$")
+            ax7.set_title("Normalized action 1")
+            ax8.set_title("Normalized action 2")
             ax1.set_xlabel("Step")
             ax1.set_ylabel(r"$[m]$")
             ax2.set_xlabel("Step")
@@ -530,11 +532,9 @@ class Runner():
             ax5.set_ylabel(r"$[\text{rad}]$")
             ax6.set_xlabel("Step")
             ax6.set_ylabel(r"$[\frac{\text{rad}}{s}]$")
-            ax5.grid()
-            ax6.grid()
+            ax7.set_xlabel("Step")
+            ax8.set_xlabel("Step")
             plt.suptitle("Quadrotor")
-        else:
-            plt.suptitle("Cartpole")
         plt.tight_layout()
         imageio.mimsave(video_path, frames, fps=fps)
         print("Video saved to: ", video_path)
