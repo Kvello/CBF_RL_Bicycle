@@ -1,14 +1,16 @@
-wandb_project: "ppo-point-goal1"
+wandb_project: "ppo-cartpole"
 
 env:
-  name: Safexp-PointGoal1-v0
-  gamma: 0.98
+  name: cartpole
+  gamma: 0.99
   # These arguments are passed to the environment constructor
   cfg:
-    done_on_violation: false
+    done_on_violation: true
+    obs_signals: ["obs"]
+    ref_signals: ["ref"]
     full_obs_key: "observation"
     safety_obs_key: "observation"
-    max_steps: 999 #< 1000
+    max_steps: 299 # < episode_len_sec*pyb_freq
     num_parallel_env: 8  #rule of thumb: <=frames_per_batch / max_steps
     params:
       max_input: 1.0
@@ -16,21 +18,21 @@ models:
   value_net:
     name: feedforward
     eps: 0.0
-    layers: [128, 64, 32]
+    layers: [64, 64]
     activation: relu
 
   policy_net:
     name: feedforward
-    layers: [128, 64, 32] 
+    layers: [64, 64]
     activation: relu
 
 algorithm:
   name: ppo
   num_epochs: 10
-  frames_per_batch: 32768   # 2**15
+  frames_per_batch: 8192   # 2**13
   sub_batch_size: 256      # 2**8
   max_grad_norm: 1.0
-  total_frames:  2097152     # 2**21
+  total_frames: 1048576     # 2**20
   clip_epsilon: 0.2
   lmbda: 0.95
   critic_coef: 1.0
@@ -38,25 +40,17 @@ algorithm:
   collision_buffer_size: 0  # same as frames_per_batch
   primary_reward_key: reward
   secondary_reward_key: neg_cost #Ignored but plotted for PPO with performance objective only
-  entropy_coef: 0.01
+  entropy_coef: 0.001
   loss_critic_type: smooth_l1
   optim_kwargs:
     lr: 1.0e-4
-  scheduler:
-    name: cosine
-    eta_min: 1.0e-6
-    last_epoch: -1
+  scheduler: null
+
 evaluation:
-  eval_steps: 1000
-  freq: 1000 #TODO
-  track_bellman_violation: false
+  eval_steps: 300
 
 render:
   render: true
-  mode: record # record, human 
-  camera: track #only used if mode is record
-  render_kwargs: #Only used if mode is record
-    width: 640
-    height: 480
   num_frames: 1000
   fps : 30
+

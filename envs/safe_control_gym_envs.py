@@ -48,7 +48,8 @@ class CartPoleEnv(EnvBase):
     batch_locked = True
     def __init__(self, 
                  num_envs=1,
-                 device = torch.device('cpu')):
+                 device = torch.device('cpu'),
+                 done_on_violation=True):
         super().__init__(device=device)
         self.batch_size = [num_envs] if num_envs > 1 else []
         # Cannot serialize pybullet envs. Must use synchronous mode
@@ -61,6 +62,7 @@ class CartPoleEnv(EnvBase):
             self._env = gym.make("cartpole")
                                     
         self._make_specs()
+        self.done_on_violation = done_on_violation
     def _set_seed(self, seed: int) -> None:
         self._env.reset(seed=seed)
     def _reset(self, tensordict: TensorDict) -> TensorDict:
@@ -72,7 +74,8 @@ class CartPoleEnv(EnvBase):
             done = np.zeros((1,), dtype=bool)
         out = TensorDict(
             {
-                "observation": torch.from_numpy(obs).to(self.device),
+                "obs": torch.from_numpy(obs[...,:4]).to(self.device),
+                "ref": torch.from_numpy(obs[...,4:]).to(self.device),
                 "done": torch.from_numpy(done).to(self.device),
                 "terminated": torch.from_numpy(done).to(self.device),
                 "truncated": torch.from_numpy(done).to(self.device),
@@ -89,15 +92,14 @@ class CartPoleEnv(EnvBase):
         done = np.array(done)
         reward = np.array(reward)
         next_obs = np.array(next_obs)
-
         assert (done == False).all(), "CarPoleEnv assumes that the environment is not reset externally"
-
         constraint_violated = np.array(info['constraint_violation']==1)
         constraint_violated = torch.from_numpy(constraint_violated).to(self.device)
         neg_cost = torch.where(constraint_violated == True, torch.tensor(-1.0), torch.tensor(0.0))
         out = TensorDict(
             {
-                "observation": torch.from_numpy(next_obs).to(self.device),
+                "obs": torch.from_numpy(next_obs[...,:4]).to(self.device),
+                "ref" : torch.from_numpy(next_obs[...,4:]).to(self.device),
                 "reward": torch.from_numpy(reward).to(self.device),
                 "done": torch.from_numpy(done).to(self.device),
                 "terminated": torch.zeros_like(torch.from_numpy(done)).to(self.device),
@@ -107,9 +109,10 @@ class CartPoleEnv(EnvBase):
             batch_size=self.batch_size,
             device=self.device,
         )
-        # The method assumes that the environment is reset if a constraint is violated
-        out["done"] = (out["neg_cost"] < 0)
-        out["terminated"] = (out["neg_cost"] < 0)
+        if self.done_on_violation:
+            out["done"] = (out["neg_cost"] < 0)
+            out["terminated"] = (out["neg_cost"] < 0)
+
         return out    
     def _make_done_spec(self):  # noqa: F811
         return CompositeSpec(
@@ -135,6 +138,22 @@ class CartPoleEnv(EnvBase):
         observation_spec = _gym_to_torchrl_spec_transform(
             self._env.observation_space,
             device=self.device,
+        )
+        observation_spec = CompositeSpec(
+            obs = BoundedTensorSpec(
+                low = observation_spec.low[...,:4],
+                high = observation_spec.high[...,:4],
+                shape=(*self.batch_size, 4),
+                dtype=torch.float32,
+                device=self.device,
+            ),
+            ref =BoundedTensorSpec(
+                low = observation_spec.low[...,4:],
+                high = observation_spec.high[...,4:],
+                shape=(*self.batch_size, 4),
+                dtype=torch.float32,
+                device=self.device,
+            ),
         )
         if not isinstance(observation_spec, CompositeSpec):
             observation_spec = CompositeSpec(

@@ -64,7 +64,8 @@ def make_double_integrator_env(name:str, cfg: dict, device:Optional[torch.device
         batch_size=cfg.get("num_parallel_env"),
         seed=cfg["seed"],
         td_params=parameters,
-        device=device
+        device=device,
+        done_on_violation=cfg.get("done_on_violation",True)
     )
     transforms = [
             UnsqueezeTransform(in_keys=obs_signals+ref_signals, 
@@ -104,12 +105,33 @@ try:
         """
         base_env = CartPoleEnv(
             num_envs=cfg.get("num_parallel_env",1),
-            device=device)
+            device=device,
+            done_on_violation=cfg.get("done_on_violation",True)
+        )    
+        obs_signals = cfg["obs_signals"]
+        ref_signals = cfg["ref_signals"]
         base_env.set_seed(cfg["seed"])
-        return TransformedEnv(
+        # Avoid overwriting un-normalized observation and reference
+        transforms = [
+            StepCounter(max_steps=cfg["max_steps"]),
+            ObservationNorm(in_keys=obs_signals, out_keys="observation"),
+            ObservationNorm(in_keys=ref_signals, out_keys="reference"),
+            CatTensors(in_keys=obs_signals+ref_signals, out_key="observation_extended",del_keys=False,dim=-1),
+            DoubleToFloat()
+        ]
+        env = TransformedEnv(
             base_env,
-            StepCounter(max_steps=cfg["max_steps"])
+            Compose(
+                *transforms
+            )
         ).to(device)
+        if cfg.get("num_parallel_env",1) > 1:
+            env.transform[1].init_stats(num_iter=10000,reduce_dim=(0,1),cat_dim=1)
+            env.transform[2].init_stats(num_iter=10000,reduce_dim=(0,1),cat_dim=1)
+        else:
+            env.transform[1].init_stats(num_iter=10000,reduce_dim=(0,),cat_dim=0)
+            env.transform[2].init_stats(num_iter=10000,reduce_dim=(0,),cat_dim=0)
+        return env
 except ImportError:
     print("Safe Control Gym not installed. Skipping CartPole environment.")
     pass
@@ -125,7 +147,8 @@ def make_safety_gym_env(env_id: str, cfg: dict,device=torch.device("cpu")) -> En
 
     base_env = SafetyGymEnv(env_id,
             num_envs=cfg.get("num_parallel_env",1),
-            device=device)
+            device=device,
+            done_on_violation=cfg.get("done_on_violation",True))
     base_env.set_seed(cfg["seed"])
     return TransformedEnv(
         base_env,

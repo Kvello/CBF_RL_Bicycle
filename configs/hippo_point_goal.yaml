@@ -6,6 +6,7 @@ env:
   gamma: 0.98
   # These arguments are passed to the environment constructor
   cfg:
+    done_on_violation: true
     full_obs_key: "observation"
     safety_obs_key: "observation"
     max_steps: 999 #< 1000
