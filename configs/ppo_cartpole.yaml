@@ -2,15 +2,15 @@ wandb_project: "ppo-cartpole"
 
 env:
   name: cartpole
-  gamma: 0.96
+  gamma: 0.99
   # These arguments are passed to the environment constructor
   cfg:
-    done_on_violation: false
-    obs_signals: ["observation"]
-    ref_signals: ["reference"]
+    done_on_violation: true
+    obs_signals: ["obs"]
+    ref_signals: ["ref"]
     full_obs_key: "observation"
     safety_obs_key: "observation"
-    max_steps: 300 # <= episode_len_sec*pyb_freq
+    max_steps: 299 # < episode_len_sec*pyb_freq
     num_parallel_env: 8  #rule of thumb: <=frames_per_batch / max_steps
     params:
       max_input: 1.0
@@ -29,7 +29,7 @@ models:
 algorithm:
   name: ppo
   num_epochs: 10
-  frames_per_batch: 4096   # 2**12
+  frames_per_batch: 8192   # 2**13
   sub_batch_size: 256      # 2**8
   max_grad_norm: 1.0
   total_frames: 1048576     # 2**20
@@ -44,10 +44,7 @@ algorithm:
   loss_critic_type: smooth_l1
   optim_kwargs:
     lr: 1.0e-4
-  scheduler:
-    name: cosine
-    last_epoch: -1
-    eta_min: 1.0e-6
+  scheduler: null
 
 evaluation:
   eval_steps: 300

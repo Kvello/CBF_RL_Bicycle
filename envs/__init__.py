@@ -111,16 +111,27 @@ try:
         obs_signals = cfg["obs_signals"]
         ref_signals = cfg["ref_signals"]
         base_env.set_seed(cfg["seed"])
+        # Avoid overwriting un-normalized observation and reference
         transforms = [
+            StepCounter(max_steps=cfg["max_steps"]),
+            ObservationNorm(in_keys=obs_signals, out_keys="observation"),
+            ObservationNorm(in_keys=ref_signals, out_keys="reference"),
             CatTensors(in_keys=obs_signals+ref_signals, out_key="observation_extended",del_keys=False,dim=-1),
-            DoubleToFloat(),
-            StepCounter(max_steps=cfg["max_steps"])]
-        return TransformedEnv(
+            DoubleToFloat()
+        ]
+        env = TransformedEnv(
             base_env,
             Compose(
                 *transforms
             )
         ).to(device)
+        if cfg.get("num_parallel_env",1) > 1:
+            env.transform[1].init_stats(num_iter=10000,reduce_dim=(0,1),cat_dim=1)
+            env.transform[2].init_stats(num_iter=10000,reduce_dim=(0,1),cat_dim=1)
+        else:
+            env.transform[1].init_stats(num_iter=10000,reduce_dim=(0,),cat_dim=0)
+            env.transform[2].init_stats(num_iter=10000,reduce_dim=(0,),cat_dim=0)
+        return env
 except ImportError:
     print("Safe Control Gym not installed. Skipping CartPole environment.")
     pass

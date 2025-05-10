@@ -74,8 +74,8 @@ class CartPoleEnv(EnvBase):
             done = np.zeros((1,), dtype=bool)
         out = TensorDict(
             {
-                "observation": torch.from_numpy(obs[...,:4]).to(self.device),
-                "reference": torch.from_numpy(obs[...,4:]).to(self.device),
+                "obs": torch.from_numpy(obs[...,:4]).to(self.device),
+                "ref": torch.from_numpy(obs[...,4:]).to(self.device),
                 "done": torch.from_numpy(done).to(self.device),
                 "terminated": torch.from_numpy(done).to(self.device),
                 "truncated": torch.from_numpy(done).to(self.device),
@@ -98,8 +98,8 @@ class CartPoleEnv(EnvBase):
         neg_cost = torch.where(constraint_violated == True, torch.tensor(-1.0), torch.tensor(0.0))
         out = TensorDict(
             {
-                "observation": torch.from_numpy(next_obs[...,:4]).to(self.device),
-                "reference" : torch.from_numpy(next_obs[...,4:]).to(self.device),
+                "obs": torch.from_numpy(next_obs[...,:4]).to(self.device),
+                "ref" : torch.from_numpy(next_obs[...,4:]).to(self.device),
                 "reward": torch.from_numpy(reward).to(self.device),
                 "done": torch.from_numpy(done).to(self.device),
                 "terminated": torch.zeros_like(torch.from_numpy(done)).to(self.device),
@@ -140,14 +140,14 @@ class CartPoleEnv(EnvBase):
             device=self.device,
         )
         observation_spec = CompositeSpec(
-            observation = BoundedTensorSpec(
+            obs = BoundedTensorSpec(
                 low = observation_spec.low[...,:4],
                 high = observation_spec.high[...,:4],
                 shape=(*self.batch_size, 4),
                 dtype=torch.float32,
                 device=self.device,
             ),
-            reference =BoundedTensorSpec(
+            ref =BoundedTensorSpec(
                 low = observation_spec.low[...,4:],
                 high = observation_spec.high[...,4:],
                 shape=(*self.batch_size, 4),
