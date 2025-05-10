@@ -8,9 +8,9 @@ env:
     done_on_violation: true
     obs_signals: ["obs"]
     ref_signals: ["ref"]
-    full_obs_key: "observation"
+    full_obs_key: "observation_extended"
     safety_obs_key: "observation"
-    max_steps: 299 # < episode_len_sec*pyb_freq
+    max_steps: 599 # < episode_len_sec*pyb_freq
     num_parallel_env: 8  #rule of thumb: <=frames_per_batch / max_steps
     params:
       max_input: 1.0
@@ -32,7 +32,7 @@ algorithm:
   frames_per_batch: 8192   # 2**13
   sub_batch_size: 256      # 2**8
   max_grad_norm: 1.0
-  total_frames: 1048576     # 2**20
+  total_frames: 524288     # 2**19
   clip_epsilon: 0.2
   lmbda: 0.95
   critic_coef: 1.0
