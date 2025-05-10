@@ -47,11 +47,11 @@ algorithm:
   scheduler: null
 
 evaluation:
-  eval_steps: 300
+  eval_steps: 1200
 
 render:
   render: true
-  num_frames: 1000
+  num_frames: 1800
   fps : 30
 
 
