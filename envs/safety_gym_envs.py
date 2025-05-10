@@ -8,10 +8,9 @@ from torchrl.data.tensor_specs import (
     UnboundedContinuousTensorSpec,
     DiscreteTensorSpec,
 )
-import gym
-import safety_gym
 import numpy as np
 from torchrl.envs.libs.gym import _gym_to_torchrl_spec_transform
+import gym
 
 #TODO: num_envs=None is not supported yet
 class SafetyGymEnv(EnvBase):
