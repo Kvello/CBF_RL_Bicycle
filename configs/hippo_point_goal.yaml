@@ -4,6 +4,7 @@ wandb_project: "hippo-point-goal1"
 env:
   name: Safexp-PointGoal1-v0
   gamma: 0.98
+  end_on_constraint_violation: true
   # These arguments are passed to the environment constructor
   cfg:
     full_obs_key: "observation"

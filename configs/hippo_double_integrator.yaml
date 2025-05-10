@@ -3,6 +3,7 @@ wandb_project: "hippo-double-integrator"
 env:
   name: double_integrator
   gamma: 0.95
+  end_on_constraint_violation: true
   # These arguments are passed to the environment constructor
   cfg:
     obs_signals: ["x1", "x2"]

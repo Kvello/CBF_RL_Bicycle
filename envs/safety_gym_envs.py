@@ -22,6 +22,7 @@ class SafetyGymEnv(EnvBase):
         env_name: str,
         num_envs: int = 1,
         device: torch.device = torch.device("cpu"),
+        end_on_constraint: bool = True,
     ):
         super().__init__(device=device)
         if num_envs > 16:
@@ -44,6 +45,7 @@ class SafetyGymEnv(EnvBase):
             )
         self.batch_size = [num_envs] if num_envs > 1 else []
         self._make_specs()
+        self.end_on_constraint = end_on_constraint
     def _step(self, tensordict: TensorDict) -> TensorDict:
         # Extract the action from the tensordict and convert it to a numpy array
         action = tensordict.get("action")
@@ -73,9 +75,9 @@ class SafetyGymEnv(EnvBase):
             batch_size=self.batch_size,
             device=self.device,
         )
-        # The method assumes that the environment is reset if a constraint is violated
-        out["done"] = (out["neg_cost"] < 0)
-        out["terminated"] = (out["neg_cost"] < 0)
+        if self.end_on_constraint:
+            out["done"] = (out["neg_cost"] < 0)
+            out["terminated"] = (out["neg_cost"] < 0)
         return out
     def _reset(self, tensordict: TensorDict) -> TensorDict:
         obs = self._env.reset()
