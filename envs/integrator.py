@@ -50,7 +50,7 @@ class DoubleIntegratorEnv(EnvBase):
                  td_params=None, 
                  seed=None, 
                  device=None,
-                 end_on_constraint:bool=False):
+                 done_on_violation:bool=False):
         self.device = device
         if batch_size is None or batch_size == 1:
             self.batch_size = []
@@ -75,7 +75,7 @@ class DoubleIntegratorEnv(EnvBase):
             seed = torch.empty((), dtype=torch.int64, device=self.device).random_(
                 generator=self.rng).item()
         self.set_seed(seed)
-        self.end_on_constraint = end_on_constraint
+        self.done_on_violation = done_on_violation
     def _set_seed(self, seed: Optional[int]):
         rng = torch.Generator(device=self.device)
         rng.manual_seed(seed)
@@ -115,7 +115,7 @@ class DoubleIntegratorEnv(EnvBase):
         x2_new = x2 + u*dt
 
         # Done
-        if self.end_on_constraint:
+        if self.done_on_violation:
             terminated = costs > 0.0
             done = terminated.clone()
         else:

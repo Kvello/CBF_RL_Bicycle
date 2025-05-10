@@ -3,9 +3,9 @@ wandb_project: "hippo-double-integrator"
 env:
   name: double_integrator
   gamma: 0.95
-  end_on_constraint_violation: true
   # These arguments are passed to the environment constructor
   cfg:
+    done_on_violation: true
     obs_signals: ["x1", "x2"]
     ref_signals: ["x1_ref", "x2_ref"]
     full_obs_key: "observation_extended"

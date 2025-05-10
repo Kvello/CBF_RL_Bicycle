@@ -65,7 +65,7 @@ def make_double_integrator_env(name:str, cfg: dict, device:Optional[torch.device
         seed=cfg["seed"],
         td_params=parameters,
         device=device,
-        end_on_constraint=cfg.get("end_on_constraint",True)
+        done_on_violation=cfg.get("done_on_violation",True)
     )
     transforms = [
             UnsqueezeTransform(in_keys=obs_signals+ref_signals, 
@@ -106,7 +106,7 @@ try:
         base_env = CartPoleEnv(
             num_envs=cfg.get("num_parallel_env",1),
             device=device,
-            end_on_constraint=cfg.get("end_on_constraint",True)
+            done_on_violation=cfg.get("done_on_violation",True)
         )
         base_env.set_seed(cfg["seed"])
         return TransformedEnv(
@@ -129,7 +129,7 @@ def make_safety_gym_env(env_id: str, cfg: dict,device=torch.device("cpu")) -> En
     base_env = SafetyGymEnv(env_id,
             num_envs=cfg.get("num_parallel_env",1),
             device=device,
-            end_on_constraint=cfg.get("end_on_constraint",True))
+            done_on_violation=cfg.get("done_on_violation",True))
     base_env.set_seed(cfg["seed"])
     return TransformedEnv(
         base_env,

@@ -3,14 +3,14 @@ wandb_project: "ppo-double-integrator"
 env:
   name: double_integrator
   gamma: 0.95
-  end_on_constraint_violation: false
   # These arguments are passed to the environment constructor
   cfg:
+    done_on_violation: false
     obs_signals: ["x1", "x2"]
     ref_signals: ["x1_ref", "x2_ref"]
     full_obs_key: "observation_extended"
     safety_obs_key: "observation"
-    max_steps: 64
+    max_steps: 128
     num_parallel_env: 64  #frames_per_batch / max_steps
     params:
       dt: 0.05
@@ -46,7 +46,7 @@ algorithm:
   collision_buffer_size: 0  # same as frames_per_batch
   primary_reward_key: reward
   secondary_reward_key: neg_cost #Ignored but plotted in PPO with performance objective only
-  entropy_coef: 0.01
+  entropy_coef: 0.001
   loss_critic_type: smooth_l1
   optim_kwargs:
     lr: 1.0e-4
