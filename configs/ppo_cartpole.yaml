@@ -51,6 +51,6 @@ evaluation:
 
 render:
   render: true
-  num_frames: 1000
+  num_frames: 3000
   fps : 30
 
