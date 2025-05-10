@@ -415,11 +415,13 @@ class Runner():
                 "theta_ref": [],
                 "theta_dot_ref": [],
             }
+        input1 = []
         if self.args["env"]["name"] == "quadrotor":
             state_dict["z"] = []
             state_dict["z_dot"] = []
             reference_dict["z_ref"] = []
             reference_dict["z_dot_ref"] = []
+            input2 = []
         obs_key = self.args["env"]["cfg"]["obs_signals"][0] # Only one obs key in cartpole
         ref_key = self.args["env"]["cfg"]["ref_signals"][0] # Only one ref key in cartpole
         
@@ -429,14 +431,8 @@ class Runner():
         num_frames = get_config_value(render_args, "num_frames", 1000, warn_str)
 
         colors = plt.cm.tab10.colors 
-        plt.figure(figsize=(10, 10))
+        plt.figure(figsize=(10, 14))
         if self.args["env"]["name"] == "cartpole":
-            ax1 = plt.subplot(2, 2, 1)
-            ax2 = plt.subplot(2, 2, 2)
-            ax3 = plt.subplot(2, 2, 3)
-            ax4 = plt.subplot(2, 2, 4)
-            axs = [ax1, ax2, ax3, ax4]
-        elif self.args["env"]["name"] == "quadrotor":
             ax1 = plt.subplot(3, 2, 1)
             ax2 = plt.subplot(3, 2, 2)
             ax3 = plt.subplot(3, 2, 3)
@@ -444,6 +440,16 @@ class Runner():
             ax5 = plt.subplot(3, 2, 5)
             ax6 = plt.subplot(3, 2, 6)
             axs = [ax1, ax2, ax3, ax4, ax5, ax6]
+        elif self.args["env"]["name"] == "quadrotor":
+            ax1 = plt.subplot(4, 2, 1)
+            ax2 = plt.subplot(4, 2, 2)
+            ax3 = plt.subplot(4, 2, 3)
+            ax4 = plt.subplot(4, 2, 4)
+            ax5 = plt.subplot(4, 2, 5)
+            ax6 = plt.subplot(4, 2, 6)
+            ax7 = plt.subplot(4, 2, 7)
+            ax8 = plt.subplot(4, 2, 8)
+            axs = [ax1, ax2, ax3, ax4, ax5, ax6, ax7, ax8]
         plot_num = 0
         for _ in range(num_frames):
             frame = env.render()
@@ -455,6 +461,11 @@ class Runner():
             for i, (s_key, r_key) in enumerate(zip(state_dict.keys(),reference_dict.keys())):
                 state_dict[s_key].append(td[obs_key][i])
                 reference_dict[r_key].append(td[ref_key][i])
+            if self.args["env"]["name"] == "quadrotor":
+                input1.append(td["action"][0])
+                input2.append(td["action"][1])
+            else:
+                input1.append(td["action"][0])
             done = td["done"].any()
             if done:
                 td = env.reset()
@@ -466,6 +477,14 @@ class Runner():
                         ax.plot(reference_dict[r_key], color=color, linestyle="--")
                         state_dict[s_key] = []
                         reference_dict[r_key] = []
+                    if self.args["env"]["name"] == "quadrotor":
+                        ax5.plot(input1, color=color)
+                        ax6.plot(input2, color=color)
+                        input1 = []
+                        input2 = []
+                    else:
+                        ax5.plot(input1, color=color)
+                        input1 = []
         
         env.close()
         now = datetime.now().strftime("%Y%m%d-%H%M%S")
