@@ -36,7 +36,7 @@ algorithm:
   frames_per_batch: 32768   # 2**15
   sub_batch_size: 256      # 2**8
   max_grad_norm: 1.0
-  total_frames: 2097152     # 2**21
+  total_frames: 8388608     # 2**23
   clip_epsilon: 0.2
   lmbda1: 0.1
   lmbda2: 0.95
@@ -47,15 +47,16 @@ algorithm:
   secondary_reward_key: reward
   entropy_coef: 0.01
   loss_critic_type: smooth_l1
+  gradient_conflict_eps: 0.0
   optim_kwargs:
     lr: 1.0e-4
   scheduler:
     name: cosine
     last_epoch: -1
-    eta_min: 1.0e-6
+    eta_min: 2.0e-7
 
 evaluation:
-  eval_steps: 1000
+  eval_steps: 3000 # Approximately 3 episodes
   track_bellman_violation: false
 
 render:
@@ -65,5 +66,5 @@ render:
   render_kwargs: #Only used if mode is record
     width: 640
     height: 480
-  num_frames: 1000
+  num_frames: 5000
   fps : 30
