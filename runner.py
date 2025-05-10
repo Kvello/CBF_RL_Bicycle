@@ -112,7 +112,7 @@ class Runner():
             elif self.args["algorithm"]["name"] == "ppo":
                 ppo_entity.train(
                     policy_module=self.policy_module,
-                    value_module=self.cdf_module,
+                    value_module=self.value_module,
                     optim=optim,
                     collector=collector,
                     replay_buffer=replay_buffer,
@@ -142,25 +142,41 @@ class Runner():
         safety_obs_key = args["env"]["cfg"]["safety_obs_key"] 
         full_obs_size = self.env.observation_spec[full_obs_key].shape[-1]
         safety_obs_size = self.env.observation_spec[safety_obs_key].shape[-1]
-        cdf_net_config = args["models"]["cdf_net"]
-        cdf_net_config = {
-            "name": cdf_net_config["name"],
-            "eps": cdf_net_config.get("eps", 0.0),
-            "layers": cdf_net_config["layers"],
-            "activation": ACTIVATION_MAP[cdf_net_config["activation"]],
-            "device": self.device,
-            "input_size": safety_obs_size, #Operating under the assumption that the cdd
-            # function only depends on the state, not on any reference signals
-        }
-        value_net_config = args["models"]["value_net"]
-        value_net_config = {
-            "name": value_net_config["name"],
-            "eps": value_net_config.get("eps", 0.0),
-            "layers": value_net_config["layers"],
-            "activation": ACTIVATION_MAP[value_net_config["activation"]],
-            "device": self.device,
-            "input_size": full_obs_size,
-        } 
+        cdf_net_config = args["models"].get("cdf_net",None)
+        value_net_config = args["models"].get("value_net",None)
+        if cdf_net_config is not None:
+            cdf_net_config = {
+                "name": cdf_net_config["name"],
+                "eps": cdf_net_config.get("eps", 0.0),
+                "layers": cdf_net_config["layers"],
+                "activation": ACTIVATION_MAP[cdf_net_config["activation"]],
+                "device": self.device,
+                "input_size": safety_obs_size, #Operating under the assumption that the cdd
+                # function only depends on the state, not on any reference signals
+            }
+            cdf_net = ValueFactory.create(**cdf_net_config)
+            self.cdf_module = ValueOperator(
+                module=cdf_net,
+                in_keys=[safety_obs_key],
+                out_keys=["V1"],
+            )
+        if value_net_config is not None:
+            value_net_config = {
+                "name": value_net_config["name"],
+                "eps": value_net_config.get("eps", 0.0),
+                "layers": value_net_config["layers"],
+                "activation": ACTIVATION_MAP[value_net_config["activation"]],
+                "device": self.device,
+                "input_size": full_obs_size,
+            } 
+            value_net = ValueFactory.create(**value_net_config)
+            self.value_module = ValueOperator(
+                module=value_net,
+                in_keys=[full_obs_key],
+                out_keys=["V2"]
+            )
+        else:
+            self.value_module = self.cdf_module
         policy_net_config = args["models"]["policy_net"]
         policy_net_config = {
             "name": policy_net_config["name"],
@@ -186,19 +202,7 @@ class Runner():
             return_log_prob=True,
         )
 
-        value_net = ValueFactory.create(**value_net_config)
-        self.value_module = ValueOperator(
-            module=value_net,
-            in_keys=[full_obs_key],
-            out_keys=["V2"]
-        )
 
-        cdf_net = ValueFactory.create(**cdf_net_config)
-        self.cdf_module = ValueOperator(
-            module=cdf_net,
-            in_keys=[safety_obs_key],
-            out_keys=["V1"],
-        )
         self.evaluator = PolicyEvaluator(env=self.eval_env,
                                     policy_module=self.policy_module,
                                     eval_steps=args["evaluation"]["eval_steps"],
@@ -228,7 +232,7 @@ class Runner():
         logs = defaultdict(list)
         eval_logs = self.evaluator.evaluate_policy()
         logs.update(eval_logs)
-        if eval_args.get("track_bellman_violation",False):
+        if eval_args.get("track_bellman_violation",False) and self.cdf_module is not None:
             bm_viol, *_ = calculate_bellman_violation(
                 eval_args.get("bellman_eval_res",10),
                 self.cdf_module,
@@ -284,7 +288,7 @@ class Runner():
         plotting_args = self.args.get("plot", {})
         plotting_args["max_steps"] = self.args["env"]["cfg"]["max_steps"]
         resolution = plotting_args.get("resolution", 100)
-        if plotting_args.get("cdf",False):
+        if plotting_args.get("cdf",False) and self.cdf_module is not None:
             print("Plotting cdf")
             plot_value_function_integrator(self.params["max_x1"], 
                                         self.params["max_x2"],

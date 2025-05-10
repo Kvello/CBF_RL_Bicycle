@@ -13,12 +13,6 @@ env:
     params:
       max_input: 1.0
 models:
-  cdf_net:
-    name: feedforward
-    eps: 0.0
-    layers: [128, 64, 32]
-    activation: relu 
-
   value_net:
     name: feedforward
     eps: 0.0

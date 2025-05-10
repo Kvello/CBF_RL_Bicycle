@@ -1,0 +1,63 @@
+wandb_project: "ppo-double-integrator"
+
+env:
+  name: double_integrator
+  gamma: 0.95
+  end_on_constraint_violation: false
+  # These arguments are passed to the environment constructor
+  cfg:
+    obs_signals: ["x1", "x2"]
+    ref_signals: ["x1_ref", "x2_ref"]
+    full_obs_key: "observation_extended"
+    safety_obs_key: "observation"
+    max_steps: 64
+    num_parallel_env: 64  #frames_per_batch / max_steps
+    params:
+      dt: 0.05
+      max_x1: 1.0
+      max_x2: 1.0
+      max_input: 1.0
+      reference_amplitude: 1.1
+      reference_frequency: 0.1
+
+models:
+  value_net:
+    name: feedforward
+    eps: 0.0
+    layers: [64, 64]
+    activation: relu
+
+  policy_net:
+    name: feedforward
+    layers: [64, 64]
+    activation: relu
+
+algorithm:
+  name: ppo
+  num_epochs: 10
+  frames_per_batch: 4096   # 2**12
+  sub_batch_size: 128      # 2**7
+  max_grad_norm: 1.0
+  total_frames: 524288     # 2**19
+  clip_epsilon: 0.2
+  lmbda: 0.95
+  critic_coef: 1.0
+  supervision_coef: 0.0
+  collision_buffer_size: 0  # same as frames_per_batch
+  primary_reward_key: reward
+  secondary_reward_key: neg_cost #Ignored but plotted in PPO with performance objective only
+  entropy_coef: 0.01
+  loss_critic_type: smooth_l1
+  optim_kwargs:
+    lr: 1.0e-4
+  scheduler: 
+    name: cosine
+    last_epoch: -1
+    eta_min: 1.0e-6
+
+
+plot:
+  num_trajs: 32
+
+evaluation:
+  eval_steps: 1000 

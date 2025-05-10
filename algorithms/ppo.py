@@ -80,10 +80,10 @@ class PPO(RLAlgoBase):
         warn_str = "scheduler_config not found in config, using default value of None"
         self.scheduler_config = get_config_value(config, "scheduler", None, warn_str) 
 
-        self.loss_value_log_keys = ["loss_safety_objective",
-                                    "loss_CDF", 
-                                    "loss_safety_entropy",
-                                    "loss_CDF_supervised",]
+        self.loss_value_log_keys = ["loss_objective",
+                                    "loss_critic", 
+                                    "loss_entropy",
+                                    "loss_value_supervised",]
         self.reward_keys = {self.primary_reward_key, self.secondary_reward_key}
     def train(self,
               policy_module: TensorDictModule,
@@ -191,7 +191,6 @@ class PPO(RLAlgoBase):
         else:
             self.scheduler = None
         logs = defaultdict(list)
-        eval_logs = defaultdict(list)
         pbar = tqdm(total=total_frames)
         for i, tensordict_data in enumerate(collector):
             logs.update(self.step(tensordict_data,
@@ -320,33 +319,26 @@ class PPO(RLAlgoBase):
             Dict[str, float]: The loss values.
         """
         loss_vals = loss_module(tensordict)
-        # rename loss value keys
-        loss_vals["loss_CDF"] = loss_vals["loss_critic"]
-        loss_vals["loss_safety_objective"] = loss_vals["loss_objective"]
-        loss_vals["loss_safety_entropy"] = loss_vals["loss_entropy"]
-        del loss_vals["loss_critic"]
-        del loss_vals["loss_objective"]
-        del loss_vals["loss_entropy"]
         # For simplicity, we calculate the collision loss(unsafe states) here, instead of in the
         # loss module. 
         if "collision_states" in tensordict:
             # Handle the case where the collision buffer is empty
             # (Only in the beginning of training)
             collision_states = tensordict["collision_states"]
-            CDF_collision_pred = loss_module.critic_network.module(collision_states)
-            loss_vals["loss_CDF_supervised"] = (
+            value_collision_pred = loss_module.critic_network.module(collision_states)
+            loss_vals["loss_value_supervised"] = (
                 torch.nn.MSELoss(reduction='mean')(
-                    CDF_collision_pred,
+                    value_collision_pred,
                     tensordict["collision_value"],
                 )
             )*self.supervision_coef
         else:
-            loss_vals["loss_CDF_supervised"] = torch.tensor(0.0).to(self.device)
+            loss_vals["loss_value_supervised"] = torch.tensor(0.0).to(self.device)
         loss_value = (
-            loss_vals["loss_safety_objective"]
-            + loss_vals["loss_CDF"]
-            + loss_vals["loss_safety_entropy"]
-            + loss_vals["loss_CDF_supervised"]
+            loss_vals["loss_objective"]
+            + loss_vals["loss_critic"]
+            + loss_vals["loss_entropy"]
+            + loss_vals["loss_value_supervised"]
         )
         
         loss_value.backward()
