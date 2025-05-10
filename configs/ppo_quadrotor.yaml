@@ -8,9 +8,9 @@ env:
     done_on_violation: false
     obs_signals: ["obs"]
     ref_signals: ["ref"]
-    full_obs_key: "observation"
+    full_obs_key: "observation_extended"
     safety_obs_key: "observation"
-    max_steps: 299 # < episode_len_sec*ctrl_freq
+    max_steps: 599 # < episode_len_sec*ctrl_freq
     num_parallel_env: 8  #rule of thumb: <=frames_per_batch / max_steps
     params:
       max_input: 1.0
