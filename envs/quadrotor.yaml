@@ -43,7 +43,7 @@ task_config:
     trajectory_type: circle
     num_cycles: 2
     trajectory_plane: 'xz'
-    trajectory_position_offset: [0, 1.25]
+    trajectory_position_offset: [0, 0.75]
     trajectory_scale: 0.7
 
   episode_len_sec: 12
