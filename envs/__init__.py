@@ -1,11 +1,10 @@
-ENV_REGISTRY = {}
 from torchrl.envs import EnvBase
 from typing import Optional
 import torch
 from tensordict import TensorDict
 from .integrator import DoubleIntegratorEnv
+from .safe_control_gym_envs import SafeControlGymEnv
 from typing import Dict, Any, Optional
-from copy import deepcopy
 from torchrl.envs.transforms import (
     TransformedEnv,
     UnsqueezeTransform,
@@ -16,6 +15,7 @@ from torchrl.envs.transforms import (
     StepCounter,
 )
 
+ENV_REGISTRY = {}
 def register_env(name):
     def decorator(cls_or_fn):
         ENV_REGISTRY[name] = cls_or_fn
@@ -91,19 +91,20 @@ def make_double_integrator_env(name:str, cfg: dict, device:Optional[torch.device
         env.transform[3].init_stats(num_iter=1000,reduce_dim=(0,),cat_dim=0)
         env.transform[4].init_stats(num_iter=1000,reduce_dim=(0,),cat_dim=0)
     return env
+
 try:
-    from envs.safe_control_gym_envs import CartPoleEnv
-    @register_env("cartpole")
-    def make_cartpole_env(env_id: str, cfg: dict, device:Optional[torch.device]) -> EnvBase:
-        """Creates a CartPole environment.
+    from envs.safe_control_gym_envs import SafeControlGymEnv
+    def make_safe_control_gym_env(env_id: str, cfg: dict, device:Optional[torch.device]) -> EnvBase:
+        """Creates a safe control gym env environment.
 
         Args:
-            env_id (str): The ID of the CartPole environment.
+            env_id (str): The ID of the safe control gym environment.
             cfg (dict): Configuration dictionary.
         Returns:
             EnvBase: The CartPole environment.
         """
-        base_env = CartPoleEnv(
+        base_env = SafeControlGymEnv(
+            env_id,
             num_envs=cfg.get("num_parallel_env",1),
             device=device,
             done_on_violation=cfg.get("done_on_violation",True)
@@ -132,8 +133,10 @@ try:
             env.transform[1].init_stats(num_iter=10000,reduce_dim=(0,),cat_dim=0)
             env.transform[2].init_stats(num_iter=10000,reduce_dim=(0,),cat_dim=0)
         return env
+    ENV_REGISTRY["cartpole"] = make_safe_control_gym_env
+    ENV_REGISTRY["quadrotor"] = make_safe_control_gym_env
 except ImportError:
-    print("Safe Control Gym not installed. Skipping CartPole environment.")
+    print("Safe Control Gym not installed. Skipping Safe Control Gym environments.")
     pass
 def make_safety_gym_env(env_id: str, cfg: dict,device=torch.device("cpu")) -> EnvBase:
     """Creates a Safety Gym environment.
