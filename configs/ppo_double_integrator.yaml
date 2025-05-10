@@ -1,11 +1,11 @@
-wandb_project: "hippo-double-integrator"
+wandb_project: "ppo-double-integrator"
 
 env:
   name: double_integrator
   gamma: 0.95
   # These arguments are passed to the environment constructor
   cfg:
-    done_on_violation: true
+    done_on_violation: false
     obs_signals: ["x1", "x2"]
     ref_signals: ["x1_ref", "x2_ref"]
     full_obs_key: "observation_extended"
@@ -21,12 +21,6 @@ env:
       reference_frequency: 0.1
 
 models:
-  cdf_net:
-    name: feedforward
-    eps: 1.0e-3
-    layers: [64, 64]
-    activation: relu
-
   value_net:
     name: feedforward
     eps: 0.0
@@ -39,21 +33,20 @@ models:
     activation: relu
 
 algorithm:
-  name: hippo
+  name: ppo
   num_epochs: 10
   frames_per_batch: 4096   # 2**12
   sub_batch_size: 128      # 2**7
   max_grad_norm: 1.0
   total_frames: 524288     # 2**19
   clip_epsilon: 0.2
-  lmbda1: 0.1
-  lmbda2: 0.95
+  lmbda: 0.95
   critic_coef: 1.0
-  supervision_coef: 1.0
-  collision_buffer_size: 4096  # same as frames_per_batch
-  primary_reward_key: neg_cost
-  secondary_reward_key: reward
-  entropy_coef: 0.01
+  supervision_coef: 0.0
+  collision_buffer_size: 0  # same as frames_per_batch
+  primary_reward_key: reward
+  secondary_reward_key: neg_cost #Ignored but plotted in PPO with performance objective only
+  entropy_coef: 0.001
   loss_critic_type: smooth_l1
   optim_kwargs:
     lr: 1.0e-4
@@ -65,26 +58,6 @@ algorithm:
 
 plot:
   num_trajs: 32
-  bellman_violation: true
-  cdf: true
-  resolution: 100
-
-  state_space:
-    x1:
-      low: -1.0 
-      high: 1.0
-    x2:
-      low: -1.0
-      high: 1.0
 
 evaluation:
-  eval_steps: 1000 # Number of steps to evaluate
-  track_bellman_violation: true
-  bellman_eval_res: 10
-  state_space:
-    x1:
-      low: -1.0
-      high: 1.0
-    x2:
-      low: -1.0
-      high: 1.0
+  eval_steps: 1000 

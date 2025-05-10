@@ -49,7 +49,7 @@ class CartPoleEnv(EnvBase):
     def __init__(self, 
                  num_envs=1,
                  device = torch.device('cpu'),
-                 end_on_constraint=True):
+                 done_on_violation=True):
         super().__init__(device=device)
         self.batch_size = [num_envs] if num_envs > 1 else []
         # Cannot serialize pybullet envs. Must use synchronous mode
@@ -62,7 +62,7 @@ class CartPoleEnv(EnvBase):
             self._env = gym.make("cartpole")
                                     
         self._make_specs()
-        self.end_on_constraint = end_on_constraint
+        self.done_on_violation = done_on_violation
     def _set_seed(self, seed: int) -> None:
         self._env.reset(seed=seed)
     def _reset(self, tensordict: TensorDict) -> TensorDict:
@@ -109,7 +109,7 @@ class CartPoleEnv(EnvBase):
             batch_size=self.batch_size,
             device=self.device,
         )
-        if self.end_on_constraint:
+        if self.done_on_violation:
             out["done"] = (out["neg_cost"] < 0)
             out["terminated"] = (out["neg_cost"] < 0)
 

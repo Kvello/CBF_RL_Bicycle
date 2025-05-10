@@ -3,9 +3,9 @@ wandb_project: "hippo-cartpole"
 env:
   name: cartpole
   gamma: 0.96
-  end_on_constraint_violation: true
   # These arguments are passed to the environment constructor
   cfg:
+    done_on_violation: true
     full_obs_key: "observation"
     safety_obs_key: "observation"
     max_steps: 249 # < episode_len_sec/pyb_freq
