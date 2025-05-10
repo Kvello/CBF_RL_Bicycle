@@ -29,10 +29,10 @@ task_config:
   task: traj_tracking  
   task_info:
     trajectory_type: 'circle'
-    num_cycles: 2
+    num_cycles: 1
     trajectory_plane: 'zx'
     trajectory_position_offset: [0, 0]
-    trajectory_scale: 1.0
+    trajectory_scale: 0.5
   normalized_rl_action_space: True
   episode_len_sec: 6
   # Randomization
