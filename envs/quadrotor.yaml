@@ -1,0 +1,85 @@
+task_config:
+  ctrl_freq: 50
+  pyb_freq: 1000
+  gui: False
+  physics: pyb
+  quad_type: 2
+
+  # State initialization
+  init_state: null
+  randomized_init: True
+  init_state_randomization_info:
+    init_x:
+      distrib: 'uniform'
+      low: -1
+      high: 1
+    init_x_dot:
+      distrib: 'uniform'
+      low: -0.1
+      high: 0.1
+    init_z:
+      distrib: 'uniform'
+      low: 0.5
+      high: 1.5
+    init_z_dot:
+      distrib: 'uniform'
+      low: -0.1
+      high: 0.1
+    init_theta:
+      distrib: 'uniform'
+      low: -0.2
+      high: 0.2
+    init_theta_dot:
+      distrib: 'uniform'
+      low: -0.1
+      high: 0.1
+  randomized_init: True
+  inertial_prop: null
+  randomized_inertial_prop: False
+  inertial_prop_randomization_info: null
+
+  task: traj_tracking
+  task_info:
+    trajectory_type: figure8
+    num_cycles: 1
+    trajectory_plane: 'xz'
+    trajectory_position_offset: [0, 1]
+    trajectory_scale: 0.75
+
+  episode_len_sec: 6
+  cost: rl_reward
+  # Constraints
+  done_on_violation: False
+  done_on_out_of_bound: False
+  use_constraint_penalty: False
+  constraint_penalty: 0.0
+  constraints:
+    - constraint_form: bounded_constraint
+      upper_bounds:
+        - 1.5
+        - 10.0
+        - 1.5
+        - 10.0
+        - 0.7854 # 45 degrees
+        - 10.0
+      lower_bounds:
+        - -1.5
+        - -10.0
+        - -1.5
+        - -10.0
+        - -0.7854 # -45 degrees
+        - -10.0
+      constrained_variable: state
+
+  # Disturbances
+  disturbances: null
+  adversary_disturbance: null
+  adversary_disturbance_offset: 0.0
+  adversary_disturbance_scale: 0.0
+  # RL Hyper-parameters
+  obs_wrap_angle: True
+  obs_goal_horizon: 1
+  rew_state_weight: 1.0
+  rew_act_weight: 0.0001
+  rew_exponential: True
+  cost: rl_reward
