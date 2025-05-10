@@ -34,7 +34,7 @@ task_config:
     trajectory_position_offset: [0, 0]
     trajectory_scale: 1.0
   normalized_rl_action_space: True
-  episode_len_sec: 5
+  episode_len_sec: 6
   # Randomization
   inertial_prop: null
   randomized_inertial_prop: False
@@ -64,7 +64,7 @@ task_config:
   adversary_disturbance_scale: 0.0
   # RL Hyper-parameters
   obs_wrap_angle: True
-  obs_goal_horizon: 0
+  obs_goal_horizon: 1
   rew_state_weight: 1.0
   rew_act_weight: 0.0001
   rew_exponential: True

@@ -401,10 +401,21 @@ class Runner():
         policy_cpu = self.policy_module.to(device)
         td = env.reset()
         frames = []
-        x = []
-        x_dot = []
-        theta = []
-        theta_dot = []
+        state_dict = {
+                "x": [],
+                "x_dot": [],
+                "theta": [],
+                "theta_dot": [],
+            }
+        reference_dict= {
+                "x_ref": [],
+                "x_dot_ref": [],
+                "theta_ref": [],
+                "theta_dot_ref": [],
+            }
+        obs_key = self.args["env"]["cfg"]["obs_signals"][0] # Only one obs key in cartpole
+        ref_key = self.args["env"]["cfg"]["ref_signals"][0] # Only one ref key in cartpole
+        
         warn_str = "Warning: fps not set. Defaulting to 60"
         fps = get_config_value(render_args, "fps", 60, warn_str)
         warn_str = "Warning: num_frames not set. Defaulting to 1000"
@@ -416,6 +427,7 @@ class Runner():
         ax2 = plt.subplot(2, 2, 2)
         ax3 = plt.subplot(2, 2, 3)
         ax4 = plt.subplot(2, 2, 4)
+        axs = [ax1, ax2, ax3, ax4]
         plot_num = 0
         for _ in range(num_frames):
             frame = env.render()
@@ -424,24 +436,20 @@ class Runner():
                 td = policy_cpu(td)
             td = env.step(td)
             td = step_mdp(td)
-            x.append(td["observation"][0].item())
-            x_dot.append(td["observation"][1].item())
-            theta.append(td["observation"][2].item())
-            theta_dot.append(td["observation"][3].item())
+            for i, (s_key, r_key) in enumerate(zip(state_dict.keys(),reference_dict.keys())):
+                state_dict[s_key].append(td[obs_key][i])
+                reference_dict[r_key].append(td[ref_key][i])
             done = td["done"].any()
             if done:
                 td = env.reset()
                 if plot_num < len(colors):
                     color = colors[plot_num]
                     plot_num += 1
-                    ax1.plot(x, color=color)
-                    ax2.plot(x_dot, color=color)
-                    ax3.plot(theta, color=color)
-                    ax4.plot(theta_dot, color=color)
-                    x = []
-                    x_dot = []
-                    theta = []
-                    theta_dot = []
+                    for ax, s_key, r_key in zip(axs,state_dict.keys(),reference_dict.keys()):
+                        ax.plot(state_dict[s_key], color=color)
+                        ax.plot(reference_dict[r_key], color=color, linestyle="--")
+                        state_dict[s_key] = []
+                        reference_dict[r_key] = []
         
         env.close()
         now = datetime.now().strftime("%Y%m%d-%H%M%S")

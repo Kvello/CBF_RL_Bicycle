@@ -74,7 +74,8 @@ class CartPoleEnv(EnvBase):
             done = np.zeros((1,), dtype=bool)
         out = TensorDict(
             {
-                "observation": torch.from_numpy(obs).to(self.device),
+                "observation": torch.from_numpy(obs[...,:4]).to(self.device),
+                "reference": torch.from_numpy(obs[...,4:]).to(self.device),
                 "done": torch.from_numpy(done).to(self.device),
                 "terminated": torch.from_numpy(done).to(self.device),
                 "truncated": torch.from_numpy(done).to(self.device),
@@ -91,15 +92,14 @@ class CartPoleEnv(EnvBase):
         done = np.array(done)
         reward = np.array(reward)
         next_obs = np.array(next_obs)
-
         assert (done == False).all(), "CarPoleEnv assumes that the environment is not reset externally"
-
         constraint_violated = np.array(info['constraint_violation']==1)
         constraint_violated = torch.from_numpy(constraint_violated).to(self.device)
         neg_cost = torch.where(constraint_violated == True, torch.tensor(-1.0), torch.tensor(0.0))
         out = TensorDict(
             {
-                "observation": torch.from_numpy(next_obs).to(self.device),
+                "observation": torch.from_numpy(next_obs[...,:4]).to(self.device),
+                "reference" : torch.from_numpy(next_obs[...,4:]).to(self.device),
                 "reward": torch.from_numpy(reward).to(self.device),
                 "done": torch.from_numpy(done).to(self.device),
                 "terminated": torch.zeros_like(torch.from_numpy(done)).to(self.device),
@@ -138,6 +138,22 @@ class CartPoleEnv(EnvBase):
         observation_spec = _gym_to_torchrl_spec_transform(
             self._env.observation_space,
             device=self.device,
+        )
+        observation_spec = CompositeSpec(
+            observation = BoundedTensorSpec(
+                low = observation_spec.low[...,:4],
+                high = observation_spec.high[...,:4],
+                shape=(*self.batch_size, 4),
+                dtype=torch.float32,
+                device=self.device,
+            ),
+            reference =BoundedTensorSpec(
+                low = observation_spec.low[...,4:],
+                high = observation_spec.high[...,4:],
+                shape=(*self.batch_size, 4),
+                dtype=torch.float32,
+                device=self.device,
+            ),
         )
         if not isinstance(observation_spec, CompositeSpec):
             observation_spec = CompositeSpec(

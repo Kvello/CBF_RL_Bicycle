@@ -107,11 +107,19 @@ try:
             num_envs=cfg.get("num_parallel_env",1),
             device=device,
             done_on_violation=cfg.get("done_on_violation",True)
-        )
+        )    
+        obs_signals = cfg["obs_signals"]
+        ref_signals = cfg["ref_signals"]
         base_env.set_seed(cfg["seed"])
+        transforms = [
+            CatTensors(in_keys=obs_signals+ref_signals, out_key="observation_extended",del_keys=False,dim=-1),
+            DoubleToFloat(),
+            StepCounter(max_steps=cfg["max_steps"])]
         return TransformedEnv(
             base_env,
-            StepCounter(max_steps=cfg["max_steps"])
+            Compose(
+                *transforms
+            )
         ).to(device)
 except ImportError:
     print("Safe Control Gym not installed. Skipping CartPole environment.")
