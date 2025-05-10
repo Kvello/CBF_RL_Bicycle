@@ -27,39 +27,56 @@ class OldStepAPIWrapper(gym.Wrapper):
     def reset(self, **kwargs):
         return self.env.reset(**kwargs)
     
-config_factory = ConfigFactory()
+def wrapped_env_func(env_func,**kwargs):
+    env = env_func(**kwargs)
+    return OldStepAPIWrapper(env)
+cartpole_factory = ConfigFactory()
 config_full_path = os.path.join(
     os.path.dirname(os.path.abspath(__file__)),
     "cartpole.yaml",
 )
 print(f"Loading config from {config_full_path}")
-config = config_factory.merge([config_full_path])
-env_func = partial(make,
+config = cartpole_factory.merge([config_full_path])
+cartpole_func = partial(make,
                     "cartpole",
                     **config.task_config)
 
-def wrapped_env_func(**kwargs):
-    env = env_func(**kwargs)
-    return OldStepAPIWrapper(env)
-gym.register("cartpole", wrapped_env_func)
+gym.register("cartpole", partial(wrapped_env_func, cartpole_func))
 
-class CartPoleEnv(EnvBase):
+quadrotor_factory = ConfigFactory()
+config_full_path = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)),
+    "quadrotor.yaml",
+)
+print(f"Loading config from {config_full_path}")
+config = quadrotor_factory.merge([config_full_path])
+quadrotor_func = partial(make,
+                    "quadrotor",
+                    **config.task_config)
+gym.register("quadrotor", partial(wrapped_env_func, quadrotor_func))
+
+
+class SafeControlGymEnv(EnvBase):
     '''Safe Control Gym, cart pole Environment.'''
     batch_locked = True
-    def __init__(self, 
+    def __init__(self,
+                 name: str,
                  num_envs=1,
                  device = torch.device('cpu'),
                  done_on_violation=True):
         super().__init__(device=device)
+        self.name = name
+        assert name in ["cartpole", "quadrotor"], f"Environment {name} not supported"
+        self.state_size = 4 if name == "cartpole" else 6
         self.batch_size = [num_envs] if num_envs > 1 else []
         # Cannot serialize pybullet envs. Must use synchronous mode
         if num_envs > 1:
             async_envs = False
-            self._env = gym.vector.make("cartpole",
+            self._env = gym.vector.make(name,
                                         num_envs=num_envs,
                                         asynchronous=async_envs)
         else:
-            self._env = gym.make("cartpole")
+            self._env = gym.make(name)
                                     
         self._make_specs()
         self.done_on_violation = done_on_violation
@@ -68,14 +85,15 @@ class CartPoleEnv(EnvBase):
     def _reset(self, tensordict: TensorDict) -> TensorDict:
         '''Reset the environment.'''
         obs ,_ = self._env.reset()
+        obs = np.array(obs).astype(np.float32)
         if self.batch_size:
             done = np.zeros((self.batch_size[0],1), dtype=bool)
         else:
             done = np.zeros((1,), dtype=bool)
         out = TensorDict(
             {
-                "obs": torch.from_numpy(obs[...,:4]).to(self.device),
-                "ref": torch.from_numpy(obs[...,4:]).to(self.device),
+                "obs": torch.from_numpy(obs[...,:self.state_size]).to(self.device),
+                "ref": torch.from_numpy(obs[...,self.state_size:]).to(self.device),
                 "done": torch.from_numpy(done).to(self.device),
                 "terminated": torch.from_numpy(done).to(self.device),
                 "truncated": torch.from_numpy(done).to(self.device),
@@ -90,16 +108,16 @@ class CartPoleEnv(EnvBase):
         action = action.to(torch.float32).cpu().numpy()
         next_obs, reward, done,_, info = self._env.step(action)
         done = np.array(done)
-        reward = np.array(reward)
-        next_obs = np.array(next_obs)
-        assert (done == False).all(), "CarPoleEnv assumes that the environment is not reset externally"
-        constraint_violated = np.array(info['constraint_violation']==1)
+        reward = np.array(reward).astype(np.float32)
+        next_obs = np.array(next_obs).astype(np.float32)
+        assert (done == False).all(), "SafeControlGymEnv assumes that the environment is not reset externally"
+        constraint_violated = np.array(info['constraint_violation']==1).astype(np.bool_)
         constraint_violated = torch.from_numpy(constraint_violated).to(self.device)
         neg_cost = torch.where(constraint_violated == True, torch.tensor(-1.0), torch.tensor(0.0))
         out = TensorDict(
             {
-                "obs": torch.from_numpy(next_obs[...,:4]).to(self.device),
-                "ref" : torch.from_numpy(next_obs[...,4:]).to(self.device),
+                "obs": torch.from_numpy(next_obs[...,:self.state_size]).to(self.device),
+                "ref" : torch.from_numpy(next_obs[...,self.state_size:]).to(self.device),
                 "reward": torch.from_numpy(reward).to(self.device),
                 "done": torch.from_numpy(done).to(self.device),
                 "terminated": torch.zeros_like(torch.from_numpy(done)).to(self.device),
@@ -141,16 +159,16 @@ class CartPoleEnv(EnvBase):
         )
         observation_spec = CompositeSpec(
             obs = BoundedTensorSpec(
-                low = observation_spec.low[...,:4],
-                high = observation_spec.high[...,:4],
-                shape=(*self.batch_size, 4),
+                low = observation_spec.low[...,:self.state_size],
+                high = observation_spec.high[...,:self.state_size],
+                shape=(*self.batch_size, self.state_size),
                 dtype=torch.float32,
                 device=self.device,
             ),
             ref =BoundedTensorSpec(
-                low = observation_spec.low[...,4:],
-                high = observation_spec.high[...,4:],
-                shape=(*self.batch_size, 4),
+                low = observation_spec.low[...,self.state_size:],
+                high = observation_spec.high[...,self.state_size:],
+                shape=(*self.batch_size, self.state_size),
                 dtype=torch.float32,
                 device=self.device,
             ),
