@@ -1,0 +1,70 @@
+task_config:
+  seed: 42
+  pyb_freq: 50
+  ctrl_freq: 50
+  physics: pyb
+
+  # State initialization
+  init_state: null
+  randomized_init: True
+  init_state_randomization_info: null
+  init_state_randomization_info:
+    init_x:
+      distrib: 'uniform'
+      low: -1
+      high: 1
+    init_x_dot:
+      distrib: 'uniform'
+      low: -0.1
+      high: 0.1
+    init_theta:
+      distrib: 'uniform'
+      low: -0.2
+      high: 0.2
+    init_theta_dot:
+      distrib: 'uniform'
+      low: -0.1
+      high: 0.1
+
+  task: traj_tracking  
+  task_info:
+    trajectory_type: 'circle'
+    num_cycles: 2
+    trajectory_plane: 'zx'
+    trajectory_position_offset: [0, 0]
+    trajectory_scale: 1.0
+  normalized_rl_action_space: True
+  episode_len_sec: 5
+  # Randomization
+  inertial_prop: null
+  randomized_inertial_prop: False
+  inertial_prop_randomization_info: null
+  # Constraints
+  done_on_violation: False
+  use_constraint_penalty: False
+  constraint_penalty: 0.0
+  constraints:
+    - constraint_form: bounded_constraint
+      upper_bounds:
+        - 1.5
+        - 10.0
+        - 0.7854 # 45 degrees
+        - 10.0
+      lower_bounds:
+        - -1.5
+        - -10.0
+        - -0.7854 # -45 degrees
+        - -10.0
+      constrained_variable: state
+  # Disturbances
+  disturbances: null
+  adversary_disturbance: null
+  adversary_disturbance_offset: 0.0
+  adversary_disturbance_scale: 0.0
+  # RL Hyper-parameters
+  obs_wrap_angle: True
+  obs_goal_horizon: 0
+  rew_state_weight: 1.0
+  rew_act_weight: 0.0001
+  rew_exponential: True
+  done_on_out_of_bound: True

@@ -1,3 +1,6 @@
 [submodule "safety_gym"]
 	path = safety-gym
 	url = git@github.com:Kvello/safety-gym.git
+[submodule "safe-control-gym"]
+	path = safe-control-gym
+	url = git@github.com:Kvello/safe-control-gym.git

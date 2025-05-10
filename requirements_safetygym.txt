@@ -1,0 +1,16 @@
+Pillow==11.1.0
+ray~=2.1.0
+setuptools==47.1.0
+xmltodict==0.14.2
+referencing <0.30
+matplotlib
+tensordict==0.5.0
+torchrl==0.5.0
+torch==2.5.1
+wandb
+pytest
+tqdm
+tensorboard
+hydra-core
+imageio[ffmpeg]
+numpy

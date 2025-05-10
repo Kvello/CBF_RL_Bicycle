@@ -33,9 +33,8 @@ from envs.integrator import(
     plot_integrator_trajectories,
     plot_value_function_integrator
 )
-from envs import make_env, SafetyGymEnv
+from envs import make_env
 from models.factory import PolicyFactory, ValueFactory
-import safety_gym
 from torchrl.envs.utils import step_mdp
 import time
 import hydra
@@ -219,6 +218,8 @@ class Runner():
             self.plot_integrator_results()
         elif self.args["env"]["name"].startswith("Safexp"):
             self.render_safety_gym_results()
+        elif self.args["env"]["name"] == "cartpole":
+            self.render_safe_control_gym_results()
         else:
             raise ValueError("No visualization method for this environment")
     def evaluate(self):
@@ -325,65 +326,154 @@ class Runner():
             
     def render_safety_gym_results(self):
         render_args = self.args.get("render", {})
-        if render_args.get("render", False):
-            cfg = self.args["env"]["cfg"]
-            # rendering only works with unbatched GymEnvs
-            cfg["num_parallel_env"] = 1
-            # For rendering, we simulate on CPU
-            device = torch.device("cpu")
-            env = make_env(self.args["env"]["name"],cfg,device)
-            policy_cpu = self.policy_module.to(device)
+        if not render_args.get("render", False):
+            return
+        cfg = self.args["env"]["cfg"]
+        # rendering only works with unbatched GymEnvs
+        cfg["num_parallel_env"] = 1
+        # For rendering, we simulate on CPU
+        device = torch.device("cpu")
+        env = make_env(self.args["env"]["name"],cfg,device)
+        policy_cpu = self.policy_module.to(device)
 
-            #resetting has to happen before camera id is obtained
-            td = env.reset()
+        #resetting has to happen before camera id is obtained
+        td = env.reset()
 
-            warn_str = "Warning: rendering mode not set. Defaulting to record"
-            render_mode = get_config_value(render_args, "mode", "record", warn_str)
-            if render_mode not in ["human", "record"]:
-                warn_str = f"Warning: Render mode {render_mode} not supported. Defaulting to 'record'"
-                warn(warn_str)
-                render_mode = "record"
+        warn_str = "Warning: rendering mode not set. Defaulting to record"
+        render_mode = get_config_value(render_args, "mode", "record", warn_str)
+        if render_mode not in ["human", "record"]:
+            warn_str = f"Warning: Render mode {render_mode} not supported. Defaulting to 'record'"
+            warn(warn_str)
+            render_mode = "record"
+        if render_mode == "record":
+            frames = []
+            warn_str = "Warning: camera not set. Defaulting to 'track'"
+            camera = get_config_value(render_args, "camera", "track", warn_str)
+            camera_id = env.camera_name2id(camera)
+        warn_str = "Warning: fps not set. Defaulting to 60"
+        fps = get_config_value(render_args, "fps", 60, warn_str)
+        warn_str = "Warning: num_frames not set. Defaulting to 1000"
+        num_frames = get_config_value(render_args, "num_frames", 1000, warn_str)
+        
+        mode = "rgb_array" if render_mode == "record" else render_mode
+        dt = 1.0/fps
+        for _ in range(num_frames):
             if render_mode == "record":
-                frames = []
-                warn_str = "Warning: camera not set. Defaulting to 'track'"
-                camera = get_config_value(render_args, "camera", "track", warn_str)
-                camera_id = env.camera_name2id(camera)
-            warn_str = "Warning: fps not set. Defaulting to 60"
-            fps = get_config_value(render_args, "fps", 60, warn_str)
-            warn_str = "Warning: num_frames not set. Defaulting to 1000"
-            num_frames = get_config_value(render_args, "num_frames", 1000, warn_str)
-            
-            mode = "rgb_array" if render_mode == "record" else render_mode
-            dt = 1.0/fps
-            for _ in range(num_frames):
-                if render_mode == "record":
-                    render_kwargs = render_args.get("render_kwargs", {})
-                    frame = env.render(mode=mode, camera_id=camera_id,**render_kwargs)
-                    frames.append(frame)
-                else:
-                    time.sleep(dt)
-                    env.render()
-                with torch.no_grad():
-                    td = policy_cpu(td)
-                td = env.step(td)
-                td = step_mdp(td)
-                done = td["done"].any()
-                if done:
-                    td = env.reset()
-            env.close()
-            now = datetime.now().strftime("%Y%m%d-%H%M%S")
-            video_path = (
-                self.args["env"]["name"] + "_" +
-                self.args["algorithm"]["name"] + 
-                "_video_" +
-                now + ".mp4"
-            )
-            imageio.mimsave(video_path, frames, fps=fps)
-            print("Video saved to: ", video_path)
-            if render_mode == "record":
-                if wandb.run is not None:
-                    wandb.log({"video": wandb.Video(video_path, format="mp4")})
-                
+                render_kwargs = render_args.get("render_kwargs", {})
+                frame = env.render(mode=mode, camera_id=camera_id,**render_kwargs)
+                frames.append(frame)
+            else:
+                time.sleep(dt)
+                env.render()
+            with torch.no_grad():
+                td = policy_cpu(td)
+            td = env.step(td)
+            td = step_mdp(td)
+            done = td["done"].any()
+            if done:
+                td = env.reset()
+        env.close()
+        now = datetime.now().strftime("%Y%m%d-%H%M%S")
+        video_path = (
+            self.args["env"]["name"] + "_" +
+            self.args["algorithm"]["name"] + 
+            "_video_" +
+            now + ".mp4"
+        )
+        imageio.mimsave(video_path, frames, fps=fps)
+        print("Video saved to: ", video_path)
+        if render_mode == "record":
+            if wandb.run is not None:
+                wandb.log({"video": wandb.Video(video_path, format="mp4")})
+    def render_safe_control_gym_results(self):
+        render_args = self.args.get("render", {})
+        if not render_args.get("render", False):
+            return
+        cfg = self.args["env"]["cfg"]
+        # rendering only works with unbatched GymEnvs
+        cfg["num_parallel_env"] = 1
+        # For rendering, we simulate on CPU
+        device = torch.device("cpu")
+        env = make_env(self.args["env"]["name"],cfg,device)
+        policy_cpu = self.policy_module.to(device)
+        td = env.reset()
+        frames = []
+        x = []
+        x_dot = []
+        theta = []
+        theta_dot = []
+        warn_str = "Warning: fps not set. Defaulting to 60"
+        fps = get_config_value(render_args, "fps", 60, warn_str)
+        warn_str = "Warning: num_frames not set. Defaulting to 1000"
+        num_frames = get_config_value(render_args, "num_frames", 1000, warn_str)
+
+        colors = plt.cm.tab10.colors 
+        plt.figure(figsize=(10, 10))
+        ax1 = plt.subplot(2, 2, 1)
+        ax2 = plt.subplot(2, 2, 2)
+        ax3 = plt.subplot(2, 2, 3)
+        ax4 = plt.subplot(2, 2, 4)
+        plot_num = 0
+        for _ in range(num_frames):
+            frame = env.render()
+            frames.append(frame)
+            with torch.no_grad():
+                td = policy_cpu(td)
+            td = env.step(td)
+            td = step_mdp(td)
+            x.append(td["observation"][0].item())
+            x_dot.append(td["observation"][1].item())
+            theta.append(td["observation"][2].item())
+            theta_dot.append(td["observation"][3].item())
+            done = td["done"].any()
+            if done:
+                td = env.reset()
+                if plot_num < len(colors):
+                    color = colors[plot_num]
+                    plot_num += 1
+                    ax1.plot(x, color=color)
+                    ax2.plot(x_dot, color=color)
+                    ax3.plot(theta, color=color)
+                    ax4.plot(theta_dot, color=color)
+                    x = []
+                    x_dot = []
+                    theta = []
+                    theta_dot = []
+        
+        env.close()
+        now = datetime.now().strftime("%Y%m%d-%H%M%S")
+        video_path = (
+            self.args["env"]["name"] + "_" +
+            self.args["algorithm"]["name"] + 
+            "_video_" +
+            now + ".mp4"
+        )
+        ax1.set_title(r"$x$")
+        ax2.set_title(r"$\dot{x}$")
+        ax3.set_title(r"$\theta$")
+        ax4.set_title(r"$\dot{\theta}$")
+        ax1.grid()
+        ax2.grid()
+        ax3.grid()
+        ax4.grid()
+        ax1.set_xlabel("Step")
+        ax1.set_ylabel(r"$[m]$")
+        ax2.set_xlabel("Step")
+        ax2.set_ylabel(r"$[\frac{m}{s}]$")
+        ax3.set_xlabel("Step")
+        ax3.set_ylabel(r"$[\text{rad}]$")
+        ax4.set_xlabel("Step")
+        ax4.set_ylabel(r"$[\frac{\text{rad}}{s}]$")
+        plt.suptitle("Cartpole")
+        plt.tight_layout()
+        imageio.mimsave(video_path, frames, fps=fps)
+        print("Video saved to: ", video_path)
+        if wandb.run is not None:
+            wandb.log({"video": wandb.Video(video_path, format="mp4")})
+            wandb.log({"figures": wandb.Image(plt)})
+        else:
+            plt.savefig("results/ppo_safe_cartpole" +\
+                datetime.now().strftime("%Y%m%d-%H%M%S") + ".pdf")
 
                 
 
