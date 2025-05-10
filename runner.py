@@ -27,7 +27,6 @@ from collections import defaultdict
 from datetime import datetime
 import matplotlib.pyplot as plt
 import wandb
-import argparse
 import yaml
 from envs.integrator import(
     plot_integrator_trajectories,
@@ -400,9 +399,12 @@ device = (
 @hydra.main(config_path="configs", config_name="default.yaml",version_base="1.3")
 def main(cfg: DictConfig) -> None:    
     config_file_path = "./configs/" + cfg.config_file
-    with open(config_file_path, "r") as f:
-        args = yaml.safe_load(f)
-    args.update(OmegaConf.to_container(cfg, resolve=True))
+    # with open(config_file_path, "r") as f:
+    #     args = yaml.safe_load(f)
+    yaml_conf = OmegaConf.load(config_file_path)
+    args = OmegaConf.merge(yaml_conf,cfg)
+    args = OmegaConf.to_container(args, resolve=True)
+    # args.update(OmegaConf.to_container(cfg, resolve=True))
     torch.manual_seed(args["seed"])
     #######################
     # Parallelization:
