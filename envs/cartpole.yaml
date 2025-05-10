@@ -41,6 +41,7 @@ task_config:
   inertial_prop_randomization_info: null
   # Constraints
   done_on_violation: False
+  done_on_out_of_bound: False
   use_constraint_penalty: False
   constraint_penalty: 0.0
   constraints:
@@ -67,4 +68,3 @@ task_config:
   rew_state_weight: 1.0
   rew_act_weight: 0.0001
   rew_exponential: True
-  done_on_out_of_bound: True
