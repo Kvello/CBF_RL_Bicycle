@@ -11,16 +11,16 @@ task_config:
   init_state_randomization_info:
     init_x:
       distrib: 'uniform'
-      low: -1
-      high: 1
+      low: -0.5
+      high: 0.5
     init_x_dot:
       distrib: 'uniform'
       low: -0.1
       high: 0.1
     init_z:
       distrib: 'uniform'
-      low: 0.5
-      high: 1.5
+      low: -0.5
+      high: 0.5
     init_z_dot:
       distrib: 'uniform'
       low: -0.1
@@ -40,13 +40,13 @@ task_config:
 
   task: traj_tracking
   task_info:
-    trajectory_type: figure8
-    num_cycles: 1
+    trajectory_type: circle
+    num_cycles: 2
     trajectory_plane: 'xz'
-    trajectory_position_offset: [0, 1]
-    trajectory_scale: 0.75
+    trajectory_position_offset: [0, 0]
+    trajectory_scale: 0.7
 
-  episode_len_sec: 6
+  episode_len_sec: 12
   cost: rl_reward
   # Constraints
   done_on_violation: False
@@ -58,14 +58,14 @@ task_config:
       upper_bounds:
         - 1.5
         - 10.0
-        - 1.5
+        - 2.5
         - 10.0
         - 0.7854 # 45 degrees
         - 10.0
       lower_bounds:
         - -1.5
         - -10.0
-        - -1.5
+        -  0.0
         - -10.0
         - -0.7854 # -45 degrees
         - -10.0
