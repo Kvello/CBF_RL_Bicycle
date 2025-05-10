@@ -456,15 +456,15 @@ class Runner():
             with torch.no_grad():
                 td = policy_cpu(td)
             td = env.step(td)
-            td = step_mdp(td)
-            for i, (s_key, r_key) in enumerate(zip(state_dict.keys(),reference_dict.keys())):
-                state_dict[s_key].append(td[obs_key][i])
-                reference_dict[r_key].append(td[ref_key][i])
             if self.args["env"]["name"] == "quadrotor":
                 input1.append(td["action"][0])
                 input2.append(td["action"][1])
             else:
                 input1.append(td["action"][0])
+            td = step_mdp(td)
+            for i, (s_key, r_key) in enumerate(zip(state_dict.keys(),reference_dict.keys())):
+                state_dict[s_key].append(td[obs_key][i])
+                reference_dict[r_key].append(td[ref_key][i])
             done = td["done"].any()
             if done:
                 td = env.reset()
