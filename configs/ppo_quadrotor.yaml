@@ -29,21 +29,21 @@ models:
 algorithm:
   name: ppo
   num_epochs: 10
-  frames_per_batch: 16384   # 2**14
-  sub_batch_size: 512      # 2**9
+  frames_per_batch: 8192   # 2**13
+  sub_batch_size: 256      # 2**8
   max_grad_norm: 1.0
   total_frames: 2097152     # 2**21
   clip_epsilon: 0.2
   lmbda: 0.95
-  critic_coef: 1.0
+  critic_coef: 0.25
   supervision_coef: 0.0
   collision_buffer_size: 0  # same as frames_per_batch
   primary_reward_key: reward
   secondary_reward_key: neg_cost #Ignored but plotted for PPO with performance objective only
-  entropy_coef: 0.001
+  entropy_coef: 0.01
   loss_critic_type: smooth_l1
   optim_kwargs:
-    lr: 1.0e-4
+    lr: 3.0e-4
   scheduler: null
 
 evaluation:
