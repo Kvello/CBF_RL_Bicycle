@@ -28,11 +28,11 @@ models:
 
 algorithm:
   name: ppo
-  num_epochs: 10
-  frames_per_batch: 8192   # 2**13
+  num_epochs: 5
+  frames_per_batch: 16384   # 2**14
   sub_batch_size: 256      # 2**8
   max_grad_norm: 1.0
-  total_frames: 2097152     # 2**21
+  total_frames: 4194305     # 2**22
   clip_epsilon: 0.2
   lmbda: 0.95
   critic_coef: 0.25
