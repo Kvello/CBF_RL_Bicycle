@@ -45,7 +45,7 @@ algorithm:
   optim_kwargs:
     lr: 8.0e-4
   scheduler:
-    name: cosie
+    name: cosine
     eta_min: 5.0e-6
     last_epoch: -1
 
