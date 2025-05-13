@@ -3,6 +3,7 @@ from torchrl.objectives.ppo import ClipPPOLoss
 from tensordict.nn import ProbabilisticTensorDictSequential, TensorDictModule
 from tensordict import TensorDict, TensorDictBase
 import torch
+from torchrl.collectors.utils import split_trajectories
 
 #TODO: Allow for modifiable tensordict keys in loss functions
 class HiPPOLoss(LossModule):
@@ -65,6 +66,7 @@ class HiPPOLoss(LossModule):
             value_target="V2_target",
             reward=secondary_reward_key,
         )
+        self.primary_objective_loss = torch.tensor(0.0, device=primary_critic.device)
     @property
     def out_keys(self):
         if self._out_keys is None:
@@ -85,7 +87,6 @@ class HiPPOLoss(LossModule):
     def forward(self, tensordict: TensorDictBase) -> TensorDictBase:
         secondary_loss_vals = self.secondary_loss(tensordict)
         primary_loss_vals = self.primary_loss(tensordict)
-
         if "collision_states" in tensordict:
             collision_states = tensordict["collision_states"]
             CDF_collision_pred = self.primary_critic.module(collision_states)
@@ -99,7 +100,7 @@ class HiPPOLoss(LossModule):
             supervised_CDF_loss = torch.tensor(0.0, device=tensordict.device)
         td_out = TensorDict(
             {
-                "loss_safety_objective": primary_loss_vals["loss_objective"],
+                "loss_safety_objective": self.primary_objective_loss,
                 "loss_secondary_objective": secondary_loss_vals["loss_objective"],
                 "loss_CDF": primary_loss_vals["loss_critic"],
                 "loss_CDF_supervised": supervised_CDF_loss,
@@ -109,3 +110,32 @@ class HiPPOLoss(LossModule):
             }
         )
         return td_out
+    def calculate_primary_objective_loss(
+        self,
+        tensordict: TensorDictBase,
+    ) -> TensorDictBase:
+        """
+        Calculate the primary objective loss for the HiPPO algorithm.
+
+        Args:
+            tensordict (TensorDictBase): The input tensor dictionary containing all
+                rollout data(not just the current batch).
+
+        Returns:
+            TensorDictBase: The tensor dictionary containing the primary objective loss.
+        """
+        # Extract transitions where the agent vioaltes the CDF constraint
+        states = tensordict[self.primary_critic.in_keys[0]]
+        next_states = tensordict["next"][self.primary_critic.in_keys[0]]
+        state_CDF_values = self.primary_critic.module(states).squeeze(-1)
+        next_state_CDF_values = self.primary_critic.module(next_states).squeeze(-1)
+        # Rejection sampling:
+        mask = (next_state_CDF_values < 0).bool()
+        if mask.sum() == 0:
+            # No transitions where the agent violates the CDF constraint
+            # Return a loss of 0
+            return torch.tensor(0.0, device=tensordict.device)
+        data = tensordict[mask]
+        loss_vals = self.primary_loss(data)
+        self.primary_objective_loss = loss_vals["loss_objective"]
+        return self.primary_objective_loss
