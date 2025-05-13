@@ -26,9 +26,8 @@ from .ppo import PPO
 import warnings
 
 def gradient_projection(
-    common_module:torch.nn.Module,
-    primary_loss:torch.Tensor,
-    secondary_loss:torch.Tensor)->torch.Tensor:
+    grad_vec_primary_loss:torch.Tensor,
+    grad_vec_secondary_loss:torch.Tensor)-> torch.Tensor:
         r"""Calculates a projected gradient of the secondary loss onto the nullspace
         of the primary loss. Returns the sum of the primary loss gradient and the
         projected secondary loss gradient. I.e
@@ -51,23 +50,13 @@ def gradient_projection(
             torch.Tensor: The projected and combined gradient
             
         Note:
-            Calling this funciton clears the gradients of the common module,
-            and does not retain the computational graph after the projection.
-            This means that to recompute the gradients, the losses have to be recomputed
-            as well.
+            Calling this funciton keeps the graph of the common_module, so that the gradients
+            can be reused.
         """
-        # Primary objective loss gradient
-        primary_loss.backward(retain_graph=True)
-        grad_vec_primary_loss = torch.cat(
-            [p.grad.view(-1) for p in common_module.parameters()]
-        ) 
-        common_module.zero_grad()
-        # Secondary objective loss gradient
-        secondary_loss.backward()
-        grad_vec_secondary_loss = torch.cat(
-            [p.grad.view(-1) for p in common_module.parameters()]
-        )
-        common_module.zero_grad()
+        if grad_vec_primary_loss is None:
+            # If primary loss gradient is None, return secondary loss gradient
+            # This is an edge case, and should not happen in practice
+            return grad_vec_secondary_loss
         if torch.isclose(grad_vec_primary_loss.norm(),torch.tensor(0.0),atol=1e-10):
             # If primary loss gradient is zero, return secondary loss gradient
             # This is an edge case, and should not happen in practice
@@ -83,7 +72,7 @@ def gradient_projection(
             secondary_proj = grad_vec_secondary_loss - secondary_proj 
         else:
             secondary_proj = grad_vec_secondary_loss
-        grad = secondary_proj + grad_vec_primary_loss
+        grad = secondary_proj
         return grad
 
 class HierarchicalPPO(PPO):
@@ -202,6 +191,8 @@ class HierarchicalPPO(PPO):
             actor=policy_module,
             primary_critic=V_primary,
             secondary_critic=V_secondary,
+            primary_reward_key=self.primary_reward_key,
+            secondary_reward_key=self.secondary_reward_key,
             clip_epsilon=self.clip_epsilon,
             critic_coef=self.critic_coef,
             supervision_coef=self.supervision_coef,
@@ -261,6 +252,14 @@ class HierarchicalPPO(PPO):
         logs = defaultdict(list)
         pbar = tqdm(total=total_frames)
         for i, tensordict_data in enumerate(collector):
+            tensordict_data = tensordict_data.to(self.device)
+            primary_objective_loss = self.loss_module.calculate_primary_objective_loss(
+                tensordict_data,
+            )
+            self.primary_obj_grad = self._get_primary_objective_grad(
+                primary_objective_loss,
+                self.loss_module.actor_network,
+            )
             logs.update(self.step(tensordict_data,
                                    self.loss_module,
                                    self.advantage_module,
@@ -310,15 +309,19 @@ class HierarchicalPPO(PPO):
             loss_vals["loss_CDF_supervised"]
         )
         critic_loss.backward()
-        safety_loss = (
-            loss_vals["loss_safety_objective"] + loss_vals["loss_safety_entropy"]
-        )
         secondary_loss = (
             loss_vals["loss_secondary_objective"] + loss_vals["loss_secondary_entropy"]
+        )        # Primary objective loss gradient
+
+  
+        # Secondary objective loss gradient
+        secondary_loss.backward(retain_graph=True)
+        grad_vec_secondary_loss = torch.cat(
+            [p.grad.view(-1) for p in loss_module.actor_network.parameters()]
         )
-        policy_grad = gradient_projection(loss_module.actor_network, 
-                            safety_loss, 
-                            secondary_loss)
+        loss_module.actor_network.zero_grad()
+        policy_grad = gradient_projection(self.primary_obj_grad,
+                                            grad_vec_secondary_loss)
                 # Set gradient to the policy module
         last_param_idx = 0
         for p in loss_module.actor_network.parameters():
@@ -331,3 +334,30 @@ class HierarchicalPPO(PPO):
         torch.nn.utils.clip_grad_norm_(loss_module.parameters(), 
                                        self.max_grad_norm)
         return loss_vals
+    def _get_primary_objective_grad(
+        self,
+        primary_objective_loss: torch.Tensor,
+        common_module: torch.nn.Module,
+    ) -> torch.Tensor:
+        """
+        Get the gradient of the primary objective loss.
+        
+        Args:
+            primary_objective_loss (torch.Tensor): The primary objective loss.
+            common_module (torch.nn.Module): The common module with which the two losses were computed.
+            
+        Returns:
+            torch.Tensor: The gradient of the primary objective loss.
+        Note:
+            Calling this functions clears the computation graph of the common_module, so if
+            the gradient is to be recomputed, the loss must be recomputed.
+        """
+        # Primary objective loss gradient
+        if primary_objective_loss == 0.0:
+            return None
+        primary_objective_loss.backward()
+        grad_vec_primary_loss = torch.cat(
+            [p.grad.view(-1) for p in common_module.parameters()]
+        )
+        common_module.zero_grad()
+        return grad_vec_primary_loss
