@@ -131,7 +131,7 @@ class HiPPOLoss(LossModule):
         next_state_CDF_values = self.primary_critic.module(next_states).squeeze(-1)
         # Rejection sampling:
         mask = (next_state_CDF_values < 0).bool()
-        if mask.sum() == 0:
+        if mask.sum() <= 256:
             # No transitions where the agent violates the CDF constraint
             # Return a loss of 0
             return torch.tensor(0.0, device=tensordict.device)

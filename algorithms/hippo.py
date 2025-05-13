@@ -72,7 +72,7 @@ def gradient_projection(
             secondary_proj = grad_vec_secondary_loss - secondary_proj 
         else:
             secondary_proj = grad_vec_secondary_loss
-        grad = secondary_proj
+        grad = secondary_proj + grad_vec_primary_loss
         return grad
 
 class HierarchicalPPO(PPO):
@@ -260,14 +260,6 @@ class HierarchicalPPO(PPO):
                 primary_objective_loss,
                 self.loss_module.actor_network,
             )
-            self.loss_module.zero_grad()
-            last_param_idx = 0
-            for p in self.loss_module.actor_network.parameters():
-                new_grad = self.primary_obj_grad[last_param_idx:last_param_idx + p.data.numel()]
-                new_grad = new_grad.view_as(p.data)
-                p.grad = new_grad
-                last_param_idx += p.data.numel()
-            self.optim.step()# Do one safety enhancing step
             logs.update(self.step(tensordict_data,
                                    self.loss_module,
                                    self.advantage_module,
