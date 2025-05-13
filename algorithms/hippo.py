@@ -150,6 +150,7 @@ class HierarchicalPPO(PPO):
             "loss_CDF_supervised",
             "loss_secondary_critic",
             "loss_secondary_entropy",
+            "loss_safety_entropy"
         }
         self.reward_keys = {self.primary_reward_key, self.secondary_reward_key}
 
@@ -310,7 +311,7 @@ class HierarchicalPPO(PPO):
         )
         critic_loss.backward()
         safety_loss = (
-            loss_vals["loss_safety_objective"]
+            loss_vals["loss_safety_objective"] + loss_vals["loss_safety_entropy"]
         )
         secondary_loss = (
             loss_vals["loss_secondary_objective"] + loss_vals["loss_secondary_entropy"]

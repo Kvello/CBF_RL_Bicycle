@@ -40,8 +40,8 @@ class HiPPOLoss(LossModule):
             actor_network=actor,
             critic_network=primary_critic,
             clip_epsilon=clip_epsilon,
-            entropy_bonus=False,
-            entropy_coef=0.0, # No entropy_coef for safety objective
+            entropy_bonus=bool(entropy_coef),
+            entropy_coef=entropy_coef, # No entropy_coef for safety objective
             critic_coef=self.critic_coef,
             loss_critic_type="smooth_l1",
         )
@@ -75,7 +75,8 @@ class HiPPOLoss(LossModule):
                     "loss_CDF",
                     "loss_CDF_supervised"
                     "loss_secondary_critic",
-                    "loss_secondary_entropy"]
+                    "loss_secondary_entropy",
+                    "loss_safety_entropy"]
             self._out_keys = keys
         return self._out_keys
 
@@ -107,6 +108,7 @@ class HiPPOLoss(LossModule):
                 "loss_CDF_supervised": supervised_CDF_loss,
                 "loss_secondary_critic": secondary_loss_vals["loss_critic"],
                 "loss_secondary_entropy": secondary_loss_vals["loss_entropy"],
+                "loss_safety_entropy": primary_loss_vals["loss_entropy"],
             }
         )
         return td_out
