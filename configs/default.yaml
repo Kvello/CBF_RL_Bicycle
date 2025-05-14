@@ -10,3 +10,10 @@ wandb: false
 visualize: false
 experiment_name: null
 seed: 3
+algorithm:
+  frames_per_batch: 8192   # 2**13
+  clip_epsilon: 0.2
+  lmbda1: 0.1
+  entropy_coef: 0.01
+  optim_kwargs:
+    lr: 5.0e-4

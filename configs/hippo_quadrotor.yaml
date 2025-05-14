@@ -36,11 +36,11 @@ algorithm:
   frames_per_batch: 8192   # 2**13
   sub_batch_size: 256      # 2**8
   max_grad_norm: 1.0
-  total_frames: 16777216     # 2**24
+  total_frames: 8388608     # 2**23
   clip_epsilon: 0.2
   lmbda1: 0.1
   lmbda2: 0.95
-  critic_coef: 0.1
+  critic_coef: 0.5
   supervision_coef: 1.0
   collision_buffer_size: 8192  # same as frames_per_batch
   primary_reward_key: neg_cost
@@ -48,7 +48,7 @@ algorithm:
   entropy_coef: 0.01
   loss_critic_type: smooth_l1
   optim_kwargs:
-    lr: 1.0e-4
+    lr: 5.0e-4
   scheduler:
     name: cosine
     eta_min: 5.0e-6
