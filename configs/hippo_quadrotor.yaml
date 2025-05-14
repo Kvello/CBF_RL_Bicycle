@@ -38,7 +38,7 @@ algorithm:
   max_grad_norm: 1.0
   total_frames: 16777216     # 2**24
   clip_epsilon: 0.2
-  lmbda1: 0.95
+  lmbda1: 0.1
   lmbda2: 0.95
   critic_coef: 0.1
   supervision_coef: 1.0

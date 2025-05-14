@@ -240,6 +240,7 @@ class PPO(RLAlgoBase):
         value_target_collision_states = (
             td["next",self.primary_reward_key][td["next",self.primary_reward_key] < 0.0]
         ).unsqueeze(-1) # This is -1 if normal safety preserving task structure is used
+        print("new states added to collision buffer")
         new_states = TensorDict({
             "collision_states": collision_states,
             "collision_value": value_target_collision_states,
