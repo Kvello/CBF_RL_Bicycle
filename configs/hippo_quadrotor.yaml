@@ -43,8 +43,8 @@ algorithm:
   critic_coef: 0.1
   supervision_coef: 1.0
   collision_buffer_size: 8192  # same as frames_per_batch
-  primary_reward_key: reward
-  secondary_reward_key: neg_cost #Ignored but plotted for PPO with performance objective only
+  primary_reward_key: neg_cost
+  secondary_reward_key: reward
   entropy_coef: 0.01
   loss_critic_type: smooth_l1
   optim_kwargs:
