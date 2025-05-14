@@ -48,7 +48,7 @@ algorithm:
   entropy_coef: 0.01
   loss_critic_type: smooth_l1
   optim_kwargs:
-    lr: 5.0e-4
+    lr: 1.0e-4
   scheduler:
     name: cosine
     eta_min: 5.0e-6

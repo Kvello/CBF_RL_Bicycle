@@ -65,8 +65,7 @@ def gradient_projection(
             raise ValueError("NaN in primary loss gradient")
         common_module.zero_grad()
         # Secondary objective loss gradient
-        with torch.autograd.set_detect_anomaly(True):
-            secondary_loss.backward()
+        secondary_loss.backward()
         grad_vec_secondary_loss = torch.cat(
             [p.grad.view(-1) for p in common_module.parameters()]
         )
