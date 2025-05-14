@@ -1,7 +1,7 @@
-wandb_project: "hippo-cartpole"
+wandb_project: "hippo-quadrotor"
 
 env:
-  name: cartpole
+  name: quadrotor
   gamma: 0.99
   # These arguments are passed to the environment constructor
   cfg:
@@ -10,23 +10,21 @@ env:
     ref_signals: ["ref"]
     full_obs_key: "observation_extended"
     safety_obs_key: "observation"
-    max_steps: 599 # < episode_len_sec*ctr_freq
+    max_steps: 599 # < episode_len_sec*ctrl_freq
     num_parallel_env: 8  #rule of thumb: <=frames_per_batch / max_steps
     params:
       max_input: 1.0
 models:
-  cdf_net:
-    name: feedforward
-    eps: 1.0e-3
-    layers: [64, 64]
-    activation: relu 
-
   value_net:
     name: feedforward
     eps: 0.0
     layers: [64, 64]
     activation: relu
-
+  cdf_net:
+    name: feedforward
+    eps: 1.0e-3
+    layers: [64, 64]
+    activation: relu 
   policy_net:
     name: feedforward
     layers: [64, 64]
@@ -34,34 +32,34 @@ models:
 
 algorithm:
   name: hippo
-  num_epochs: 10
+  num_epochs: 5
   frames_per_batch: 8192   # 2**13
   sub_batch_size: 256      # 2**8
   max_grad_norm: 1.0
-  total_frames: 2097152     # 2**21
+  total_frames: 16777216     # 2**24
   clip_epsilon: 0.2
-  lmbda1: 0.1
+  lmbda1: 0.95
   lmbda2: 0.95
-  critic_coef: 1.0
+  critic_coef: 0.1
   supervision_coef: 1.0
   collision_buffer_size: 8192  # same as frames_per_batch
-  primary_reward_key: neg_cost
-  secondary_reward_key: reward
-  entropy_coef: 0.001
+  primary_reward_key: reward
+  secondary_reward_key: neg_cost #Ignored but plotted for PPO with performance objective only
+  entropy_coef: 0.01
   loss_critic_type: smooth_l1
   optim_kwargs:
-    lr: 3.0e-4
-  scheduler: 
+    lr: 5.0e-4
+  scheduler:
     name: cosine
-    eta_min: 1.0e-6
+    eta_min: 5.0e-6
     last_epoch: -1
 
-
 evaluation:
-  eval_steps: 300
-  track_bellman_violation: false
+  eval_steps: 1200
 
 render:
   render: true
-  num_frames: 1000
+  num_frames: 1800
   fps : 30
+
+

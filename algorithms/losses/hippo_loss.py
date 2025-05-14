@@ -100,6 +100,24 @@ class HiPPOLoss(LossModule):
             )*self.supervision_coef
         else:
             supervised_CDF_loss = torch.tensor(0.0, device=tensordict.device)
+        assert not torch.isnan(
+            primary_loss_vals["loss_objective"]
+        ).any(), "NaN in primary loss"
+        assert not torch.isnan(
+            secondary_loss_vals["loss_objective"]
+        ).any(), "NaN in secondary loss"
+        assert not torch.isnan(
+            primary_loss_vals["loss_critic"]
+        ).any(), "NaN in primary critic loss"
+        assert not torch.isnan(
+            secondary_loss_vals["loss_critic"]
+        ).any(), "NaN in secondary critic loss"
+        assert not torch.isnan(
+            primary_loss_vals["loss_entropy"]
+        ).any(), "NaN in primary entropy loss"
+        assert not torch.isnan(
+            secondary_loss_vals["loss_entropy"]
+        ).any(), "NaN in secondary entropy loss"
         td_out = TensorDict(
             {
                 "loss_safety_objective": primary_loss_vals["loss_objective"],
@@ -136,7 +154,8 @@ class HiPPOLoss(LossModule):
         if mask.sum() == 0:
             # No transitions where the agent violates the CDF constraint
             # Return a loss of 0
-            return torch.tensor(0.0, device=tensordict.device)
+            dummy = self.actor_network(tensordict)  # Just get something on the same graph
+            return torch.zeros(1, device=tensordict.device) * dummy["action"].sum()
         data = tensordict[mask]
         loss_vals = self.primary_loss(data)
         return loss_vals["loss_objective"]

@@ -61,12 +61,17 @@ def gradient_projection(
         grad_vec_primary_loss = torch.cat(
             [p.grad.view(-1) for p in common_module.parameters()]
         ) 
+        if torch.isnan(grad_vec_primary_loss).any():
+            raise ValueError("NaN in primary loss gradient")
         common_module.zero_grad()
         # Secondary objective loss gradient
-        secondary_loss.backward()
+        with torch.autograd.set_detect_anomaly(True):
+            secondary_loss.backward()
         grad_vec_secondary_loss = torch.cat(
             [p.grad.view(-1) for p in common_module.parameters()]
         )
+        if torch.isnan(grad_vec_secondary_loss).any():
+            raise ValueError("NaN in secondary loss gradient")
         common_module.zero_grad()
         if torch.isclose(grad_vec_primary_loss.norm(),torch.tensor(0.0),atol=1e-10):
             # If primary loss gradient is zero, return secondary loss gradient
@@ -83,7 +88,11 @@ def gradient_projection(
             secondary_proj = grad_vec_secondary_loss - secondary_proj 
         else:
             secondary_proj = grad_vec_secondary_loss
+        if torch.isnan(secondary_proj).any():
+            raise ValueError("NaN in secondary loss projection")
         grad = secondary_proj + grad_vec_primary_loss
+        if torch.isnan(grad).any():
+            raise ValueError("NaN in combined gradient")
         return grad
 
 class HierarchicalPPO(PPO):
@@ -324,6 +333,10 @@ class HierarchicalPPO(PPO):
         for p in loss_module.actor_network.parameters():
             new_grad = policy_grad[last_param_idx:last_param_idx + p.data.numel()]
             new_grad = new_grad.view_as(p.data)
+            if torch.isnan(new_grad).any():
+                raise ValueError("NaN in gradient")
+            if torch.isinf(new_grad).any():
+                raise ValueError("Inf in gradient") 
             p.grad = new_grad
             last_param_idx += p.data.numel()
         # this is not strictly mandatory but it's good practice to keep
