@@ -18,25 +18,25 @@ models:
   value_net:
     name: feedforward
     eps: 0.0
-    layers: [64, 64]
+    layers: [128, 64]
     activation: relu
   cdf_net:
     name: feedforward
     eps: 1.0e-3
-    layers: [64, 64]
+    layers: [128, 64]
     activation: relu 
   policy_net:
     name: feedforward
-    layers: [64, 64]
+    layers: [128, 64]
     activation: relu
 
 algorithm:
   name: hippo
-  num_epochs: 5
+  num_epochs: 10
   frames_per_batch: 8192   # 2**13
   sub_batch_size: 256      # 2**8
   max_grad_norm: 1.0
-  total_frames: 8388608    # 2**23
+  total_frames: 16777216    # 2**24
   clip_epsilon: 0.1
   lmbda1: 0.95
   lmbda2: 0.95
@@ -45,7 +45,7 @@ algorithm:
   collision_buffer_size: 8192  # same as frames_per_batch
   primary_reward_key: neg_cost
   secondary_reward_key: reward
-  entropy_coef: 0.01
+  entropy_coef: 0.001
   loss_critic_type: smooth_l1
   optim_kwargs:
     lr: 1.0e-4

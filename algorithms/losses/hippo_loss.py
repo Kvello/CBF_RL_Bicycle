@@ -151,7 +151,7 @@ class HiPPOLoss(LossModule):
         next_state_CDF_values = self.primary_critic.module(next_states).squeeze(-1)
         # Rejection sampling:
         mask = (next_state_CDF_values < 0).bool()
-        if mask.sum() == 0:
+        if mask.sum() <= 30:
             # No transitions where the agent violates the CDF constraint
             # Return a loss of 0
             dummy = self.actor_network(tensordict)  # Just get something on the same graph
