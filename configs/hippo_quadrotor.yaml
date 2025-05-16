@@ -45,7 +45,7 @@ algorithm:
   collision_buffer_size: 8192  # same as frames_per_batch
   primary_reward_key: neg_cost
   secondary_reward_key: reward
-  entropy_coef: 0.001
+  entropy_coef: 0.01
   loss_critic_type: smooth_l1
   optim_kwargs:
     lr: 1.0e-4
