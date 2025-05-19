@@ -51,7 +51,7 @@ algorithm:
     lr: 1.0e-4
   scheduler:
     name: cosine
-    eta_min: 1.0e-5
+    eta_min: 5.0e-6
     last_epoch: -1
 
 evaluation:
