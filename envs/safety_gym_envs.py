@@ -1,0 +1,189 @@
+import gym.vector
+from tensordict import TensorDict
+from torchrl.envs import EnvBase
+import torch
+from torchrl.data.tensor_specs import (
+    CompositeSpec,
+    BoundedTensorSpec,
+    UnboundedContinuousTensorSpec,
+    DiscreteTensorSpec,
+)
+import numpy as np
+from torchrl.envs.libs.gym import _gym_to_torchrl_spec_transform
+import gym
+
+#TODO: num_envs=None is not supported yet
+class SafetyGymEnv(EnvBase):
+    # We can safely use this class instead of the GymEnv class since safety gym envs
+    # do not reset, other than on max steps(1000), be sure to reset before this. Any reset is done by us
+    batch_locked = True
+    def __init__(
+        self,
+        env_name: str,
+        num_envs: int = 1,
+        device: torch.device = torch.device("cpu"),
+        done_on_violation: bool = True,
+    ):
+        super().__init__(device=device)
+        if num_envs > 16:
+            # Above 16 environments, we use synchronous mode
+            async_envs = False
+        else:
+            # Below 16 environments, we use asynchronous mode
+            async_envs = True
+        if num_envs > 1:
+            self._env = gym.vector.make(
+                env_name,
+                num_envs=num_envs,
+                asynchronous=async_envs,
+                disable_env_checker=False,
+            )
+        elif num_envs == 1:
+            self._env = gym.make(
+                env_name,
+                disable_env_checker=False,
+            )
+        self.batch_size = [num_envs] if num_envs > 1 else []
+        self._make_specs()
+        self.done_on_violation = done_on_violation
+    def _step(self, tensordict: TensorDict) -> TensorDict:
+        # Extract the action from the tensordict and convert it to a numpy array
+        action = tensordict.get("action")
+        action = action.to(torch.float32).cpu().numpy()
+        next_obs, reward, done, info = self._env.step(action)
+        done = np.array(done)
+        reward = np.array(reward)
+        next_obs = np.array(next_obs)
+        assert (done == False).all(), "SafetyGymEnv assumes that the environment is not reset"
+        # The 'cost' field in the info dict is the 'aggregate cost', i.e the sum
+        # of all costs for each object in the environment.
+        # We don't differentiate between the objects and all are treated equally.
+        # Therfore we only check if any of the costs are positive.
+        neg_cost = np.array(info['cost']>0)
+        neg_cost = torch.from_numpy(neg_cost).to(self.device)
+        neg_cost = torch.where(neg_cost == True, torch.tensor(-1.0), torch.tensor(0.0))
+        # Note that device is always CPU for gym environments
+        out = TensorDict(
+            {
+                "observation": torch.from_numpy(next_obs).to(self.device),
+                "reward": torch.from_numpy(reward).to(self.device),
+                "done": torch.from_numpy(done).to(self.device),
+                "terminated": torch.zeros_like(torch.from_numpy(done)).to(self.device),
+                "truncated": torch.zeros_like(torch.from_numpy(done)).to(self.device),
+                "neg_cost": neg_cost.to(self.device),
+            },
+            batch_size=self.batch_size,
+            device=self.device,
+        )
+        if self.done_on_violation:
+            out["done"] = (out["neg_cost"] < 0)
+            out["terminated"] = (out["neg_cost"] < 0)
+        return out
+    def _reset(self, tensordict: TensorDict) -> TensorDict:
+        obs = self._env.reset()
+        if self.batch_size:
+            done = np.zeros((self.batch_size[0],1), dtype=bool)
+        else:
+            done = np.zeros((1,), dtype=bool)
+        out = TensorDict(
+            {
+                "observation": torch.from_numpy(obs).to(self.device),
+                "done": torch.from_numpy(done).to(self.device),
+                "terminated": torch.from_numpy(done).to(self.device),
+                "truncated": torch.from_numpy(done).to(self.device),
+            },
+            batch_size=self.batch_size,
+            device=self.device,
+        )
+        return out
+    def _set_seed(self, seed: int) -> None:
+        self._env.seed(seed)
+
+    def _reward_space(self, env):
+        if hasattr(env, "reward_space") and env.reward_space is not None:
+            return env.reward_space
+    def _make_done_spec(self):  # noqa: F811
+        return CompositeSpec(
+            {
+                "done": DiscreteTensorSpec(
+                    2, dtype=torch.bool, device=self.device, shape=(*self.batch_size, 1)
+                ),
+                "terminated": DiscreteTensorSpec(
+                    2, dtype=torch.bool, device=self.device, shape=(*self.batch_size, 1)
+                ),
+                "truncated": DiscreteTensorSpec(
+                    2, dtype=torch.bool, device=self.device, shape=(*self.batch_size, 1)
+                ),
+            },
+            shape=self.batch_size,
+        )
+    def _make_specs(self, batch_size=None) -> None:
+        cur_batch_size = self.batch_size if batch_size is None else torch.Size([])
+        action_spec = _gym_to_torchrl_spec_transform(
+            self._env.action_space,
+            device=self.device,
+        )
+        observation_spec = _gym_to_torchrl_spec_transform(
+            self._env.observation_space,
+            device=self.device,
+        )
+        if not isinstance(observation_spec, CompositeSpec):
+            observation_spec = CompositeSpec(
+                observation=observation_spec, shape=cur_batch_size
+            )
+        elif observation_spec.shape[: len(cur_batch_size)] != cur_batch_size:
+            observation_spec.shape = cur_batch_size
+
+
+        reward_space = self._reward_space(self._env)
+        if reward_space is not None:
+            base_reward_spec = _gym_to_torchrl_spec_transform(
+                reward_space,
+                device=self.device,
+            )
+        else:
+            base_reward_spec = UnboundedContinuousTensorSpec(
+                shape=[1],
+                device=self.device,
+            )
+        if batch_size is not None:
+            action_spec = action_spec.expand(*batch_size, *action_spec.shape)
+            base_reward_spec = base_reward_spec.expand(*batch_size, *base_reward_spec.shape)
+            observation_spec = observation_spec.expand(
+                *batch_size, *observation_spec.shape
+            )
+
+        self.done_spec = self._make_done_spec()
+        self.action_spec = action_spec
+        if base_reward_spec.shape[: len(cur_batch_size)] != cur_batch_size:
+            base_reward_spec = base_reward_spec.expand(*cur_batch_size, *base_reward_spec.shape)
+        else:
+            base_reward_spec = base_reward_spec
+        self.observation_spec = observation_spec
+        self.reward_spec = CompositeSpec(
+            {
+                "neg_cost": BoundedTensorSpec(
+                    low = -1.0,
+                    high = 0.0,
+                    shape=base_reward_spec.shape, dtype=torch.float32),
+                "reward": base_reward_spec,
+            },shape=self.batch_size
+        )
+    def render(self, mode="human", camera_id=0, **kwargs):
+        if self.batch_size:
+            raise NotImplementedError("Rendering for batch environments is not implemented yet")
+        else:
+            return self._env.render(mode=mode,camera_id=camera_id,**kwargs)
+    def close(self):
+        self._env.close()
+        super().close()
+    def camera_name2id(self, camera_name):
+        """Converts a camera name to a camera ID.
+        Remember to reset the environment before calling this function. 
+        """
+        return self._env.model.camera_name2id(camera_name)
+    def camera_id2name(self, camera_id):
+        """Converts a camera ID to a camera name.
+        Remember to reset the environment before calling this function.
+        """
+        return self._env.model.camera_id2name(camera_id)

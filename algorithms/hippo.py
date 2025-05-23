@@ -28,8 +28,7 @@ import warnings
 def gradient_projection(
     common_module:torch.nn.Module,
     primary_loss:torch.Tensor,
-    secondary_loss:torch.Tensor,
-    debug:bool = False)->torch.Tensor:
+    secondary_loss:torch.Tensor)->torch.Tensor:
         r"""Calculates a projected gradient of the secondary loss onto the nullspace
         of the primary loss. Returns the sum of the primary loss gradient and the
         projected secondary loss gradient. I.e
@@ -62,12 +61,16 @@ def gradient_projection(
         grad_vec_primary_loss = torch.cat(
             [p.grad.view(-1) for p in common_module.parameters()]
         ) 
+        if torch.isnan(grad_vec_primary_loss).any():
+            raise ValueError("NaN in primary loss gradient")
         common_module.zero_grad()
         # Secondary objective loss gradient
         secondary_loss.backward()
         grad_vec_secondary_loss = torch.cat(
             [p.grad.view(-1) for p in common_module.parameters()]
         )
+        if torch.isnan(grad_vec_secondary_loss).any():
+            raise ValueError("NaN in secondary loss gradient")
         common_module.zero_grad()
         if torch.isclose(grad_vec_primary_loss.norm(),torch.tensor(0.0),atol=1e-10):
             # If primary loss gradient is zero, return secondary loss gradient
@@ -84,7 +87,11 @@ def gradient_projection(
             secondary_proj = grad_vec_secondary_loss - secondary_proj 
         else:
             secondary_proj = grad_vec_secondary_loss
+        if torch.isnan(secondary_proj).any():
+            raise ValueError("NaN in secondary loss projection")
         grad = secondary_proj + grad_vec_primary_loss
+        if torch.isnan(grad).any():
+            raise ValueError("NaN in combined gradient")
         return grad
 
 class HierarchicalPPO(PPO):
@@ -99,7 +106,7 @@ class HierarchicalPPO(PPO):
         self.max_grad_norm = get_config_value(config, "max_grad_norm", 1.0)
         
         warn_str = "device not found in config, using default value of 'cpu'"
-        self.device = get_config_value(config, "device", "cpu", warn_str)
+        self.device = get_config_value(config, "device", torch.device("cpu"), warn_str)
 
         warn_str = "clip_epsilon not found in config, using default value of 0.2"
         self.clip_epsilon = get_config_value(config, "clip_epsilon", 0.2, warn_str)
@@ -128,34 +135,32 @@ class HierarchicalPPO(PPO):
         warn_str = "entropy_coef not found in config, using default value of 0.0"
         self.entropy_coef = get_config_value(config, "entropy_coef", 0.0, warn_str)
 
-        warn_str = "collision_buffer_size not found in config, using default value of 1e6"
+        warn_str = "collision_buffer_size not found in config, using default value of None"
         self.collision_buffer_size = get_config_value(config, 
                                                       "collision_buffer_size",
-                                                      int(1e6),
+                                                      None,
                                                       warn_str)
         warn_str = "supervision_coef not found in config, using default value of 1.0"
         self.supervision_coef = get_config_value(config, "supervision_coef", 1.0, warn_str)
 
+        warn_str = "optim_kwargs not found in config, using default value of {}"
+        self.optim_kwargs = get_config_value(config, "optim_kwargs", {}, warn_str)
+
+        warn_str = "safety_obs_key not found in config, using default value of 'observation'"
+        self.safety_obs_key = get_config_value(config, "safety_obs_key", "observation", warn_str)
+
+        warn_str = "scheduler not found in config, using default value of None"
+        self.scheduler_config = get_config_value(config, "scheduler", None, warn_str)
         self.loss_value_log_keys = {
             "loss_safety_objective",
             "loss_secondary_objective",
-            "loss_CBF",
-            "loss_CBF_supervised",
+            "loss_CDF",
+            "loss_CDF_supervised",
             "loss_secondary_critic",
-            "loss_safety_entropy",
             "loss_secondary_entropy",
+            "loss_safety_entropy"
         }
         self.reward_keys = {self.primary_reward_key, self.secondary_reward_key}
-
-        self.debug = config.get("debug", False)
-
-        warn_str = "gradient_scaler not found in config, using default value of None"
-        self.gradient_normalization = get_config_value(config, "gradient_normalization",None,warn_str)
-        if self.gradient_normalization is not None:
-            self.gradient_normalization = NormalizerFactory.create(self.gradient_normalization,
-                                                                   **config.get("gradient_normalization_kwargs", {}))
-        else:
-            self.gradient_normalization = lambda x: x
 
     def train(self,
               policy_module: TensorDictModule,
@@ -200,13 +205,6 @@ class HierarchicalPPO(PPO):
         if V_primary.out_keys[0] == V_secondary.out_keys[0]:
             warnings.warn("Value networks have the same output keys. This may cause issues.")
             
-        if self.config.get("track", False):
-            wandb.init(project=self.config.get("wandb_project", "ppo"),
-                    sync_tensorboard=True,
-                    monitor_gym=True,
-                    save_code=True,
-                    name=self.config.get("experiment_name", None),
-                    config = {**self.config,"method":"hippo"})
             
         self.loss_module = HiPPOLoss(
             actor=policy_module,
@@ -232,17 +230,43 @@ class HierarchicalPPO(PPO):
             list(policy_module.parameters()) + 
             list(V_primary.parameters()) +
             list(V_secondary.parameters()),
-            **self.config.get("optim_kwargs", {})
+            **self.optim_kwargs
         )
-        self.collision_buffer = ReplayBuffer(
-            storage=LazyTensorStorage(max_size = self.collision_buffer_size,
-                                      device=self.device),
-            sampler=RandomSampler(),
-        )
-        print("Training with config:")
-        print(self.config)
+        if self.collision_buffer_size is None or self.collision_buffer_size == 0:
+            self.collision_buffer = []
+        else:
+            self.collision_buffer = ReplayBuffer(
+                storage=LazyTensorStorage(max_size = self.collision_buffer_size,
+                                        device=self.device),
+                sampler=RandomSampler(),
+            )
+        if self.scheduler_config is not None:
+            scheduler_name = self.scheduler_config["name"]
+            if scheduler_name == "linear":
+                self.scheduler = torch.optim.lr_scheduler.LinearLR(
+                    self.optim,
+                    start_factor=self.scheduler_config["start_factor"],
+                    end_factor=self.scheduler_config["end_factor"],
+                    total_iters=self.scheduler_config["total_iters"],
+                )
+            elif scheduler_name == "cosine":
+                self.scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+                    self.optim,
+                    T_max=int(total_frames/self.frames_per_batch),
+                    eta_min=self.scheduler_config.get("eta_min",0.0),
+                )
+            elif scheduler_name == "step":
+                self.scheduler = torch.optim.lr_scheduler.StepLR(
+                    self.optim,
+                    step_size=self.scheduler_config["step_size"],
+                    gamma=self.scheduler_config["gamma"],
+                )
+            else:
+                raise ValueError(f"Scheduler {scheduler_name} not found in config.\
+                                Please use one of the following: linear, cosine, step")
+        else:
+            self.scheduler = None
         logs = defaultdict(list)
-        eval_logs = defaultdict(list)
         pbar = tqdm(total=total_frames)
         for i, tensordict_data in enumerate(collector):
             logs.update(self.step(tensordict_data,
@@ -252,8 +276,9 @@ class HierarchicalPPO(PPO):
                                    replay_buffer,
                                    eval_func=eval_func))
             pbar.update(tensordict_data.numel())
-            # scheduler.step()
-            if self.config.get("track", False):
+            if self.scheduler is not None:
+                self.scheduler.step()
+            if wandb.run is not None:
                 wandb.log({**logs})
             else:
                 cum_primary_reward_str = \
@@ -288,9 +313,9 @@ class HierarchicalPPO(PPO):
          
         loss_vals = loss_module(tensordict)
         critic_loss = (
-            loss_vals["loss_CBF"] +
+            loss_vals["loss_CDF"] +
             loss_vals["loss_secondary_critic"] +
-            loss_vals["loss_CBF_supervised"]
+            loss_vals["loss_CDF_supervised"]
         )
         critic_loss.backward()
         safety_loss = (
@@ -301,13 +326,16 @@ class HierarchicalPPO(PPO):
         )
         policy_grad = gradient_projection(loss_module.actor_network, 
                             safety_loss, 
-                            secondary_loss,
-                            debug=self.debug)
+                            secondary_loss)
                 # Set gradient to the policy module
         last_param_idx = 0
         for p in loss_module.actor_network.parameters():
             new_grad = policy_grad[last_param_idx:last_param_idx + p.data.numel()]
             new_grad = new_grad.view_as(p.data)
+            if torch.isnan(new_grad).any():
+                raise ValueError("NaN in gradient")
+            if torch.isinf(new_grad).any():
+                raise ValueError("Inf in gradient") 
             p.grad = new_grad
             last_param_idx += p.data.numel()
         # this is not strictly mandatory but it's good practice to keep

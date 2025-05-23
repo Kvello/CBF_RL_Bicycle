@@ -62,19 +62,28 @@ class PPO(RLAlgoBase):
         warn_str = "entropy_coef not found in config, using default value of 0.00"
         self.entropy_coef = get_config_value(config, "entropy_coef", 0.00, warn_str)
         
-        warn_str = "collision_buffer_size not found in config, using default value of 1e6"
+        warn_str = "collision_buffer_size not found in config, using default value of None"
         self.collision_buffer_size = get_config_value(config, 
                                                        "collision_buffer_size",
-                                                       int(1e6),
+                                                       None,
                                                        warn_str)
 
         warn_str = "supervision_coef not found in config, using default value of 1.0"
         self.supervision_coef = get_config_value(config, "supervision_coef", 1.0, warn_str)
 
-        self.loss_value_log_keys = ["loss_safety_objective",
-                                    "loss_CBF", 
-                                    "loss_safety_entropy",
-                                    "loss_CBF_supervised",]
+        warn_str = "optim_kwargs not found in config, using default value of {}"
+        self.optim_kwargs = get_config_value(config, "optim_kwargs", {}, warn_str)
+
+        warn_str = "safety_obs_key not found in config, using default value of 'observation'"
+        self.safety_obs_key = get_config_value(config, "safety_obs_key", "observation", warn_str)
+        
+        warn_str = "scheduler_config not found in config, using default value of None"
+        self.scheduler_config = get_config_value(config, "scheduler", None, warn_str) 
+
+        self.loss_value_log_keys = ["loss_objective",
+                                    "loss_critic", 
+                                    "loss_entropy",
+                                    "loss_value_supervised",]
         self.reward_keys = {self.primary_reward_key, self.secondary_reward_key}
     def train(self,
               policy_module: TensorDictModule,
@@ -115,13 +124,6 @@ class PPO(RLAlgoBase):
             raise ValueError("Collector must have total_frames attribute.\
                                 Try using a different collector.")
 
-        if self.config.get("track", False):
-            wandb.init(project=self.config.get("wandb_project", "ppo"),
-                    sync_tensorboard=True,
-                    monitor_gym=True,
-                    save_code=True,
-                    name=self.config.get("experiment_name", None),
-                    config = {**self.config,"method": "ppo"})
             
         self.advantage_module = GAE(
             gamma=self.gamma,
@@ -154,15 +156,41 @@ class PPO(RLAlgoBase):
         )
         self.optim = optim(self.loss_module.parameters(), **self.config.get("optim_kwargs", {}))
 
-        self.collision_buffer = ReplayBuffer(
-            storage=LazyTensorStorage(max_size = self.collision_buffer_size,
-                                      device=self.device),
-            sampler=RandomSampler(),
-        )
-        print("Training with config:")
-        print(self.config)
+        if self.collision_buffer_size is None or self.collision_buffer_size == 0:
+            self.collision_buffer = []
+        else:
+            self.collision_buffer = ReplayBuffer(
+                storage=LazyTensorStorage(max_size = self.collision_buffer_size,
+                                        device=self.device),
+                sampler=RandomSampler(),
+            )
+        if self.scheduler_config is not None:
+            scheduler_name = self.scheduler_config["name"]
+            if scheduler_name == "linear":
+                self.scheduler = torch.optim.lr_scheduler.LinearLR(
+                    self.optim,
+                    start_factor=self.scheduler_config["start_factor"],
+                    end_factor=self.scheduler_config["end_factor"],
+                    total_iters=self.scheduler_config["total_iters"],
+                )
+            elif scheduler_name == "cosine":
+                self.scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+                    self.optim,
+                    T_max=int(total_frames / self.frames_per_batch),
+                    eta_min=self.scheduler_config["eta_min"],
+                )
+            elif scheduler_name == "step":
+                self.scheduler = torch.optim.lr_scheduler.StepLR(
+                    self.optim,
+                    step_size=self.scheduler_config["step_size"],
+                    gamma=self.scheduler_config["gamma"],
+                )
+            else:
+                raise ValueError(f"Scheduler {scheduler_name} not found in config.\
+                                Please use one of the following: linear, cosine, step")
+        else:
+            self.scheduler = None
         logs = defaultdict(list)
-        eval_logs = defaultdict(list)
         pbar = tqdm(total=total_frames)
         for i, tensordict_data in enumerate(collector):
             logs.update(self.step(tensordict_data,
@@ -172,8 +200,9 @@ class PPO(RLAlgoBase):
                                    replay_buffer,
                                    eval_func=eval_func))
             pbar.update(tensordict_data.numel())
-            # scheduler.step()
-            if self.config.get("track", False):
+            if self.scheduler is not None:
+                self.scheduler.step()
+            if wandb.run is not None:
                 wandb.log({**logs})
             else:
                 cum_primary_reward_str = \
@@ -194,23 +223,23 @@ class PPO(RLAlgoBase):
     def _update_collision_buffer(self, td: TensorDict):
         """
         Update the collision buffer with the current tensordict data.
-        Note: We assume that the data from the collector is split into trajectories
-        by split_trajs = True.
         
         Args:
             td (TensorDict): The data tensor dictionary.
         """
-        states = td["obs"]
+        if self.collision_buffer_size is None or self.collision_buffer_size == 0:
+            return
+        states = td[self.safety_obs_key]
         collision_indcs = torch.where(
-            td["next", "reward"] <0.0
+            td["next", self.primary_reward_key] <0.0
         )[:-1]
         collision_states = states[collision_indcs]
         if collision_states.shape[0] == 0:
             # No collision states to add
             return
         value_target_collision_states = (
-            td["next","reward"][td["next","reward"] < 0.0]
-        ).unsqueeze(-1)
+            td["next",self.primary_reward_key][td["next",self.primary_reward_key] < 0.0]
+        ).unsqueeze(-1) # This is -1 if normal safety preserving task structure is used
         new_states = TensorDict({
             "collision_states": collision_states,
             "collision_value": value_target_collision_states,
@@ -264,15 +293,16 @@ class PPO(RLAlgoBase):
                 for key in self.loss_value_log_keys:
                     logs[key] += loss_vals[key].item()
         for key in self.loss_value_log_keys:
-            logs[key] /= self.num_epochs
+            logs[key] /= self.num_epochs*(self.frames_per_batch // self.sub_batch_size)
         for key in self.reward_keys:
             logs[key] = tensordict_data["next",key].to(torch.float32).mean().item()
+        step_counts = tensordict_data["step_count"][tensordict_data["next", "done"] == True]
         logs["step_count(average)"] = (
-            tensordict_data["step_count"].max(dim=1).values.to(torch.float32).mean().item()
+            step_counts.to(torch.float32).mean().item()
         )
         logs["lr"] = optim.param_groups[0]["lr"]
         if eval_func is not None:
-            logs.update(eval_func(tensordict_data))
+            logs.update(eval_func())
         return logs
 
     def _set_gradients(self,
@@ -289,34 +319,26 @@ class PPO(RLAlgoBase):
             Dict[str, float]: The loss values.
         """
         loss_vals = loss_module(tensordict)
-        # rename loss value keys
-        loss_vals["loss_CBF"] = loss_vals["loss_critic"]
-        loss_vals["loss_safety_objective"] = loss_vals["loss_objective"]
-        loss_vals["loss_safety_entropy"] = loss_vals["loss_entropy"]
-        del loss_vals["loss_critic"]
-        del loss_vals["loss_objective"]
-        del loss_vals["loss_entropy"]
         # For simplicity, we calculate the collision loss(unsafe states) here, instead of in the
         # loss module. 
         if "collision_states" in tensordict:
             # Handle the case where the collision buffer is empty
             # (Only in the beginning of training)
-            unsafe_states = tensordict["collision_states"]
-            unsafe_CBF_prediction = loss_module.critic_network.module(unsafe_states)
-            target_unsafe_value = unsafe_states["collision_value"] # This will nominally be -1
-            loss_vals["loss_CBF_supervised"] = (
+            collision_states = tensordict["collision_states"]
+            value_collision_pred = loss_module.critic_network.module(collision_states)
+            loss_vals["loss_value_supervised"] = (
                 torch.nn.MSELoss(reduction='mean')(
-                    unsafe_CBF_prediction,
-                    target_unsafe_value,
+                    value_collision_pred,
+                    tensordict["collision_value"],
                 )
             )*self.supervision_coef
         else:
-            loss_vals["loss_CBF_supervised"] = torch.tensor(0.0).to(self.device)
+            loss_vals["loss_value_supervised"] = torch.tensor(0.0).to(self.device)
         loss_value = (
-            loss_vals["loss_safety_objective"]
-            + loss_vals["loss_CBF"]
-            + loss_vals["loss_safety_entropy"]
-            + loss_vals["loss_CBF_supervised"]
+            loss_vals["loss_objective"]
+            + loss_vals["loss_critic"]
+            + loss_vals["loss_entropy"]
+            + loss_vals["loss_value_supervised"]
         )
         
         loss_value.backward()

@@ -8,3 +8,7 @@ models/weights/*
 wandb/
 *.pdf
 *.png
+.vscode/
+outputs
+*.mp4
+multirun

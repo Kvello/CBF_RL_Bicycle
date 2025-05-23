@@ -1,0 +1,65 @@
+wandb_project: "hippo-quadrotor"
+
+env:
+  name: quadrotor
+  gamma: 0.99
+  # These arguments are passed to the environment constructor
+  cfg:
+    done_on_violation: true
+    obs_signals: ["obs"]
+    ref_signals: ["ref"]
+    full_obs_key: "observation_extended"
+    safety_obs_key: "observation"
+    max_steps: 599 # < episode_len_sec*ctrl_freq
+    num_parallel_env: 8  #rule of thumb: <=frames_per_batch / max_steps
+    params:
+      max_input: 1.0
+models:
+  value_net:
+    name: feedforward
+    eps: 0.0
+    layers: [128, 64]
+    activation: relu
+  cdf_net:
+    name: feedforward
+    eps: 1.0e-3
+    layers: [128, 64]
+    activation: relu 
+  policy_net:
+    name: feedforward
+    layers: [128, 64]
+    activation: relu
+
+algorithm:
+  name: hippo
+  num_epochs: 10
+  frames_per_batch: 8192   # 2**13
+  sub_batch_size: 256      # 2**8
+  max_grad_norm: 1.0
+  total_frames: 16777216    # 2**24
+  clip_epsilon: 0.1
+  lmbda1: 0.95
+  lmbda2: 0.95
+  critic_coef: 0.5
+  supervision_coef: 1.0
+  collision_buffer_size: 8192  # same as frames_per_batch
+  primary_reward_key: neg_cost
+  secondary_reward_key: reward
+  entropy_coef: 0.02
+  loss_critic_type: smooth_l1
+  optim_kwargs:
+    lr: 1.0e-4
+  scheduler:
+    name: cosine
+    eta_min: 5.0e-6
+    last_epoch: -1
+
+evaluation:
+  eval_steps: 1200
+
+render:
+  render: true
+  num_frames: 1800
+  fps : 30
+
+
