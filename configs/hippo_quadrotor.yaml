@@ -37,7 +37,7 @@ algorithm:
   sub_batch_size: 256      # 2**8
   max_grad_norm: 1.0
   total_frames: 16777216    # 2**24
-  clip_epsilon: 0.1
+  clip_epsilon: 0.2
   lmbda1: 0.95
   lmbda2: 0.95
   critic_coef: 0.5
@@ -45,7 +45,7 @@ algorithm:
   collision_buffer_size: 8192  # same as frames_per_batch
   primary_reward_key: neg_cost
   secondary_reward_key: reward
-  entropy_coef: 0.02
+  entropy_coef: 0.01
   loss_critic_type: smooth_l1
   optim_kwargs:
     lr: 1.0e-4
