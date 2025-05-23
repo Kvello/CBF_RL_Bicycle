@@ -3,7 +3,6 @@ from typing import Optional
 import torch
 from tensordict import TensorDict
 from .integrator import DoubleIntegratorEnv
-from .safe_control_gym_envs import SafeControlGymEnv
 from typing import Dict, Any, Optional
 from torchrl.envs.transforms import (
     TransformedEnv,

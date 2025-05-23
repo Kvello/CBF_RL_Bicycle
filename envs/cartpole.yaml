@@ -45,12 +45,12 @@ task_config:
   constraints:
     - constraint_form: bounded_constraint
       upper_bounds:
-        - 1.5
+        - 0.4
         - 10.0
         - 0.7854 # 45 degrees
         - 10.0
       lower_bounds:
-        - -1.5
+        - -0.4
         - -10.0
         - -0.7854 # -45 degrees
         - -10.0
