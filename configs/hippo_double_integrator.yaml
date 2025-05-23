@@ -1,4 +1,3 @@
-wandb_project: "hippo-double-integrator"
 
 env:
   name: double_integrator

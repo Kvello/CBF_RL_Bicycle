@@ -1,3 +1,4 @@
+wandb_project: "hippo-double-integrator"
 config_file: hippo_double_integrator.yaml
 weights_dir: /home/markus/Documents/CBF_RL_Bicycle/models/weights/
 policy_path: null
