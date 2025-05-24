@@ -41,6 +41,12 @@ class PolicyEvaluator:
                 self.eval_steps, self.policy_module,break_when_any_done=False
             )
             step_counts = eval_rollout["step_count"][eval_rollout["next", "done"] == True]
+            step_count_avg = step_counts.to(torch.float32).mean().item()
+            if torch.isnan(step_count_avg):
+                print("Warning: step_count_avg is NaN.")
+                print(step_counts)
+                print(eval_rollout["next", "done"])
+                print(eval_rollout["step_count"])
             for key in self.keys_to_log:
                 if key in eval_rollout["next"]:
                     if key == "step_count":
