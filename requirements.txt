@@ -9,6 +9,8 @@ torchrl==0.5.0
 torch==2.5.1
 wandb
 pytest
+pandas
+seaborn
 tqdm
 tensorboard
 hydra-core
