@@ -47,7 +47,7 @@ algorithm:
   scheduler: null
 
 evaluation:
-  eval_steps: 300
+  eval_steps: 3000
 
 render:
   render: true

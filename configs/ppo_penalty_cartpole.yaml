@@ -48,7 +48,7 @@ algorithm:
   scheduler: null
 
 evaluation:
-  eval_steps: 300
+  eval_steps: 3000 # Approximately 5 episodes
 
 render:
   render: true
