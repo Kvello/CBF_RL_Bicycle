@@ -542,7 +542,8 @@ class Runner():
             wandb.log({"video": wandb.Video(video_path, format="mp4")})
             wandb.log({"figures": wandb.Image(plt)})
         else:
-            plt.savefig("results/ppo_safe_cartpole" +\
+            env_name = self.args["env"]["name"]
+            plt.savefig("results/ppo_safe_"+env_name+"_" +\
                 datetime.now().strftime("%Y%m%d-%H%M%S") + ".pdf")
 
                 

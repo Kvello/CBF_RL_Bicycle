@@ -76,6 +76,9 @@ class PPO(RLAlgoBase):
 
         warn_str = "safety_obs_key not found in config, using default value of 'observation'"
         self.safety_obs_key = get_config_value(config, "safety_obs_key", "observation", warn_str)
+
+        warn_str = "constraint_penalty not found in config, using default value of 0.0"
+        self.constraint_penalty = get_config_value(config, "constraint_penalty", 0.0, warn_str)
         
         warn_str = "scheduler_config not found in config, using default value of None"
         self.scheduler_config = get_config_value(config, "scheduler", None, warn_str) 
@@ -84,7 +87,9 @@ class PPO(RLAlgoBase):
                                     "loss_critic", 
                                     "loss_entropy",
                                     "loss_value_supervised",]
-        self.reward_keys = {self.primary_reward_key, self.secondary_reward_key}
+        self.combined_reward_key = "combined_reward" # This is the one we use for optimization
+        self.reward_keys = {self.primary_reward_key, self.secondary_reward_key,
+                            self.combined_reward_key}
     def train(self,
               policy_module: TensorDictModule,
               value_module: TensorDictModule,
@@ -134,7 +139,7 @@ class PPO(RLAlgoBase):
         )
         self.advantage_module.set_keys(
             value = value_module.out_keys[0],
-            reward = self.primary_reward_key,
+            reward = self.combined_reward_key,
             advantage = "advantage",
             value_target = "value_target",
         )
@@ -152,7 +157,7 @@ class PPO(RLAlgoBase):
             advantage="advantage",
             value=value_module.out_keys[0],
             value_target="value_target",
-            reward=self.primary_reward_key,
+            reward=self.combined_reward_key,
         )
         self.optim = optim(self.loss_module.parameters(), **self.config.get("optim_kwargs", {}))
 
@@ -193,6 +198,10 @@ class PPO(RLAlgoBase):
         logs = defaultdict(list)
         pbar = tqdm(total=total_frames)
         for i, tensordict_data in enumerate(collector):
+            tensordict_data["next",self.combined_reward_key] = (
+                tensordict_data["next", self.primary_reward_key]
+                + self.constraint_penalty*tensordict_data["next", self.secondary_reward_key]
+            )
             logs.update(self.step(tensordict_data,
                                    self.loss_module,
                                    self.advantage_module,
