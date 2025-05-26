@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-# aggregate_wandb.py
+from mpl_toolkits.axes_grid1.inset_locator import zoomed_inset_axes, mark_inset, inset_axes
 import os
 import wandb
 import matplotlib as mpl
@@ -15,23 +15,26 @@ mpl.rc('font', family='serif')
 mpl.rcParams['text.latex.preamble'] = r'\usepackage{amsmath}\usepackage{amsfonts}'
 
 ENTITY   = "markus-kv1-ntnu"
-PROJECT  = "hippo-double-integrator-aggregate"
-BASELINE_PROJECT = "ppo-penalty-double-integrator-aggregate"
-env_name = "double_integrator"
+env_name = "cartpole"
+PROJECT  = "hippo-"+env_name+"-aggregate"
+BASELINE_PROJECT = "ppo-penalty-"+env_name+"-aggregate"
 METRICS  = [
-    "step_count(average)", "reward", "neg_cost",
-    "eval step_count(average)", "eval neg_cost(average)",
+    "step_count(average)",
+    "neg_cost",
+    "reward",
+    "eval step_count(average)",
+    "eval neg_cost(average)",
     "eval reward(average)"
 ]
 metric_to_latex = {
-    "step_count(average)": r"$\mathbb{E}[T]$",
-    "reward": r"$\mathbb{E}[r]$",
-    "neg_cost": r"$-\mathbb{E}[c]$",
-    "eval step_count(average)": r"$\mathbb{E}\bigl[T^\text{eval}\bigr]$",
-    "eval neg_cost(average)": r"$-\mathbb{E}\bigl[c^\text{eval}\bigr]$",
-    "eval reward(average)": r"$\mathbb{E}\bigl[r^\text{eval}\bigr]$"
+    "step_count(average)": r"$\hat{\mathbb{E}}[T]$",
+    "reward": r"$\hat{\mathbb{E}}[r]$",
+    "neg_cost": r"$-\hat{\mathbb{E}}[c]$",
+    "eval step_count(average)": r"$\hat{\mathbb{E}}\bigl[T_\text{eval}\bigr]$",
+    "eval neg_cost(average)": r"$-\hat{\mathbb{E}}\bigl[c_\text{eval}\bigr]$",
+    "eval reward(average)": r"$\hat{\mathbb{E}}\bigl[r_\text{eval}\bigr]$"
 }
-MAX_STEPS = 127
+MAX_STEPS = 255
 # -----------------------------------------
 
 api  = wandb.Api()                        # requires WANDB_API_KEY in env
@@ -60,20 +63,52 @@ num_plots = len(METRICS)
 num_cols = 3
 num_rows = ceil(num_plots / num_cols)
 
+styles = [('-', 'o'), ('--', 's'), ('-.', '^'), (':', 'd')]
+penalties = sorted(penalty_values)
+colors = sns.color_palette(n_colors=len(penalties) + 1)
+
+fig, axes = plt.subplots(1, len(METRICS), figsize=(5*len(METRICS), 4))
 fig, axes = plt.subplots(num_rows, num_cols, figsize=(12, 6), sharex=True)
 axes = axes.flatten()
-legends = ["HiPPO"] + [r"$\nu = $" + str(penalty) for penalty in penalty_values]
+# zoomed_metrics = [
+#     "eval neg_cost(average)",
+#     "neg_cost",
+# ]
+zoomed_metrics = []
+errorbar = ("pi",95)
 for ax, metric in zip(axes, METRICS):
     # baseline “HiPPO” curve
     sns.lineplot(
         data=df_all, x="_step", y=metric,
-        estimator="mean", errorbar=("pi",95), linewidth=2,
+        estimator="mean", errorbar=errorbar, linewidth=2,
         label=r"\text{HiPPO}",  # now also LaTeX
         ax=ax,
+        alpha=0.9,
+        linestyle="-", markers="o",
+        legend=False,
+        color=colors[0]
     )
+    if metric in zoomed_metrics:
+        axins = zoomed_inset_axes(ax,
+            zoom=2.5,
+            loc='center right')
+        if metric not in ["neg_cost","eval neg_cost(average)"]:
+            axins = zoomed_inset_axes(ax,
+                    zoom=1.5,
+                    loc='center right')
+        sns.lineplot(
+            data=df_all, x="_step", y=metric,
+            estimator="mean", errorbar=errorbar, linewidth=2,
+            legend=False,
+            ax=axins,
+            alpha=0.9,
+            linestyle="-", markers="o",
+            color=colors[0]
+        )
 
     # each penalty curve
-    for penalty in penalty_values:
+    for i, penalty in enumerate(penalties):
+        ls, mk = styles[i%len(styles)]
         sns.lineplot(
             data= df_baseline[df_baseline.constraint_penalty == penalty],
             x     = "_step",
@@ -82,13 +117,44 @@ for ax, metric in zip(axes, METRICS):
             errorbar =("pi",95),
             linewidth  = 2,
             label = rf"$\nu = {penalty}$",  # raw‐string latex
+            legend = False,
             ax    = ax,
+            alpha=0.7,
+            color=colors[i+1],marker=mk,linestyle=ls,
+            markevery=20
         )
-
+        if metric in zoomed_metrics:
+            sns.lineplot(
+                    data= df_baseline[df_baseline.constraint_penalty == penalty],
+                    x     = "_step",
+                    y     = metric,
+                    estimator="mean",
+                    errorbar =("pi",95),
+                    linewidth  = 2,
+                    ax    = axins,
+                    legend = False,
+                    alpha=0.7,
+                    color=colors[i+1],marker=mk,linestyle=ls,
+                    markevery=20
+            )
+     
+    if metric in zoomed_metrics:
+        axins.set_xlim(int(MAX_STEPS*0.9), MAX_STEPS)
+        if metric in ["neg_cost","eval neg_cost(average)"]:
+            axins.set_ylim(-5e-3, 0.0)
+        else:
+            max_T = df_all[metric].max()
+            axins.set_ylim(int(max_T*0.85),max_T)
+        axins.set_ylabel("")
+        mark_inset(ax, axins, loc1=2, loc2=4, fc="none", ec="0.5")
+    ax.set_ylabel("")
+    ax.yaxis.labelpad = 0
     ax.grid(True)
     ax.set_title(rf"${metric_to_latex.get(metric, metric)}$")
     ax.set_xlabel("Optimization Steps")
-    ax.legend()
+
+handles, labels = axes[0].get_legend_handles_labels()
+fig.legend(handles, labels,loc="lower right", bbox_to_anchor=(0.97, 0.1))
 
 for ax in axes[num_plots:]:
     ax.remove()
@@ -120,6 +186,8 @@ if env_name == "double_integrator":
         )
         ax.set_title(rf"${bellman_metrics_to_latex.get(metric, metric)}$")
         ax.set_xlabel("Optimization Steps")
+        ax.set_ylabel("")
+        ax.yaxis.labelpad = 0
         ax.grid(True)
     plt.tight_layout()
     plt.savefig(f"plots/{env_name}_bellman_metrics.pdf")
