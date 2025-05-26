@@ -60,14 +60,14 @@ task_config:
         - 10.0
         - 1.5
         - 10.0
-        - 1.5707 # 90 degrees
+        - 0.78539 # 45 deg
         - 10.0
       lower_bounds:
         - -0.5
         - -10.0
         -  0.5
         - -10.0
-        - -1.5707 # -90 degrees
+        - -0.78539 # -45 degrees
         - -10.0
       constrained_variable: state
 

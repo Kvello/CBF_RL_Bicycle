@@ -32,7 +32,7 @@ algorithm:
   frames_per_batch: 8192   # 2**13
   sub_batch_size: 256      # 2**8
   max_grad_norm: 1.0
-  total_frames: 524288     # 2**19
+  total_frames: 2097152     # 2**21
   clip_epsilon: 0.2
   lmbda: 0.95
   critic_coef: 1.0
@@ -44,8 +44,11 @@ algorithm:
   loss_critic_type: smooth_l1
   constraint_penalty: 10
   optim_kwargs:
-    lr: 1.0e-4
-  scheduler: null
+    lr: 3.0e-4
+  scheduler: 
+    name: cosine
+    eta_min: 1.0e-6
+    last_epoch: -1
 
 evaluation:
   eval_steps: 3000 # Approximately 5 episodes
