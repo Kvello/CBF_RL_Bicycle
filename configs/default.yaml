@@ -9,6 +9,7 @@ eval: false
 save: false
 wandb: false
 visualize: false
+save_locally: false
 experiment_name: null
 algorithm:
   constraint_penalty: 10

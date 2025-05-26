@@ -325,9 +325,11 @@ class Runner():
             plt.ylabel("x2")
             if wandb.run is not None:
                 wandb.log({"bellman_violation": wandb.Image(plt)})
-            else:
-                plt.savefig("results/ppo_safe_integrator_bellman_violation" +\
-                    datetime.now().strftime("%Y%m%d-%H%M%S") + ".pdf")
+            if wandb.run is None or self.args["save_locally"]:
+                algo = self.args["algorithm"]["name"]
+                plot_path = "results/"+algo+"_safe_"+env_name+"_" +\
+                datetime.now().strftime("%Y%m%d-%H%M%S") + ".pdf"
+                plt.savefig(plot_path)
             
     def render_safety_gym_results(self):
         render_args = self.args.get("render", {})
@@ -541,10 +543,13 @@ class Runner():
         if wandb.run is not None:
             wandb.log({"video": wandb.Video(video_path, format="mp4")})
             wandb.log({"figures": wandb.Image(plt)})
-        else:
+        if wandb.run is None or self.args["save_locally"]:
             env_name = self.args["env"]["name"]
-            plt.savefig("results/ppo_safe_"+env_name+"_" +\
-                datetime.now().strftime("%Y%m%d-%H%M%S") + ".pdf")
+            algo = self.args["algorithm"]["name"]
+            plot_path = "results/"+algo+"_safe_"+env_name+"_" +\
+                datetime.now().strftime("%Y%m%d-%H%M%S") + ".pdf"
+            plt.savefig(plot_path)
+            print("Plots saved to " + plot_path)
 
                 
 
