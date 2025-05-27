@@ -327,6 +327,7 @@ class Runner():
                 wandb.log({"bellman_violation": wandb.Image(plt)})
             if wandb.run is None or self.args["save_locally"]:
                 algo = self.args["algorithm"]["name"]
+                env_name = self.args["env"]["name"]
                 plot_path = "results/"+algo+"_safe_"+env_name+"_" +\
                 datetime.now().strftime("%Y%m%d-%H%M%S") + ".pdf"
                 plt.savefig(plot_path)
