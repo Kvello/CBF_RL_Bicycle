@@ -296,13 +296,15 @@ class Runner():
                                         self.params["max_x2"],
                                         resolution,
                                         self.cdf_module,
-                                        transforms=self.env.transform[:-1])
+                                        transforms=self.env.transform[:-1],
+                                        save_locally=self.args["save_locally"])
         if plotting_args.get("num_trajs",0) > 0:
             plot_integrator_trajectories(self.env, 
                                         self.policy_module,
                                         plotting_args["max_steps"],
                                         plotting_args["num_trajs"],
-                                        self.cdf_module)
+                                        self.cdf_module,
+                                        save_locally=self.args["save_locally"])
             print("Plotted trajectories")
         if plotting_args.get("bellman_violation",False):
             print("Calculating and plotting Bellman violation")
@@ -328,7 +330,7 @@ class Runner():
             if wandb.run is None or self.args["save_locally"]:
                 algo = self.args["algorithm"]["name"]
                 env_name = self.args["env"]["name"]
-                plot_path = "results/"+algo+"_safe_"+env_name+"_" +\
+                plot_path = "results/"+algo+env_name+"_" +"bellman_violation"+\
                 datetime.now().strftime("%Y%m%d-%H%M%S") + ".pdf"
                 plt.savefig(plot_path)
             

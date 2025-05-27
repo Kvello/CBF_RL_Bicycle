@@ -290,7 +290,8 @@ def plot_integrator_trajectories(env: EnvBase,
                                  policy_module: nn.Module,
                                  rollout_len:int, 
                                  num_trajectories:int,
-                                 value_module:Optional[TensorDictModule]=None):
+                                 value_module:Optional[TensorDictModule]=None,
+                                 save_locally:Optional[bool] = False):
     """Plots the trajectories of the agent in the environment.
 
     Args:
@@ -373,13 +374,14 @@ def plot_integrator_trajectories(env: EnvBase,
         plt.colorbar()
     if wandb.run is not None:
         wandb.log({"integrator_trajectories": wandb.Image(fig)})
-    else:
+    if wandb.run is None or save_locally:
         plt.savefig("results/integrator_trajectories" + datetime.now().strftime("%Y%m%d-%H%M%S") + ".pdf")
 def plot_value_function_integrator(max_x1:float, max_x2:float,
                                     resolution:int, 
                                     value_module:TensorDictModule,
                                     levels:List[float] = [0.0],
-                                    transforms:Optional[List[Transform]] = []):
+                                    transforms:Optional[List[Transform]] = [],
+                                    save_locally:Optional[bool] = false):
     """Plots the value function landscape across the state space.
     Current implementation only supports 2D state spaces.
     Args:
@@ -435,7 +437,7 @@ def plot_value_function_integrator(max_x1:float, max_x2:float,
     fig.colorbar(surf)
     if wandb.run is not None:
         wandb.log({"value_function_landscape": wandb.Image(fig)})
-    else:
+    if wandb.run is None or save_locally:
         plt.savefig("results/value_function_landscape" + datetime.now().strftime("%Y%m%d-%H%M%S") + ".pdf")
 
 
