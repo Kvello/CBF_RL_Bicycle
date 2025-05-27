@@ -381,7 +381,7 @@ def plot_value_function_integrator(max_x1:float, max_x2:float,
                                     value_module:TensorDictModule,
                                     levels:List[float] = [0.0],
                                     transforms:Optional[List[Transform]] = [],
-                                    save_locally:Optional[bool] = false):
+                                    save_locally:Optional[bool] = False):
     """Plots the value function landscape across the state space.
     Current implementation only supports 2D state spaces.
     Args:
