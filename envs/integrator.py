@@ -338,7 +338,7 @@ def plot_integrator_trajectories(env: EnvBase,
     plt.plot([-max_x1, max_x1], [max_x2, max_x2], "r")
     plt.xlabel(r"$x_1$")
     plt.ylabel(r"$x_2$")
-    plt.title("Trajectories of the agent")
+    plt.title("Double Integrator")
     plt.xlim(-max_x1*1.1, max_x1*1.1)
     plt.ylim(-max_x2*1.1, max_x2*1.1)
     if value_module is not None:
