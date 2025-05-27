@@ -15,15 +15,15 @@ mpl.rc('font', family='serif')
 mpl.rcParams['text.latex.preamble'] = r'\usepackage{amsmath}\usepackage{amsfonts}'
 
 ENTITY   = "markus-kv1-ntnu"
-env_name = "cartpole"
+env_name = "double-integrator"
 PROJECT  = "hippo-"+env_name+"-aggregate"
 BASELINE_PROJECT = "ppo-penalty-"+env_name+"-aggregate"
 METRICS  = [
     "step_count(average)",
-    "neg_cost",
-    "reward",
     "eval step_count(average)",
+    "neg_cost",
     "eval neg_cost(average)",
+    "reward",
     "eval reward(average)"
 ]
 metric_to_latex = {
@@ -34,7 +34,19 @@ metric_to_latex = {
     "eval neg_cost(average)": r"$-\hat{\mathbb{E}}\bigl[c_\text{eval}\bigr]$",
     "eval reward(average)": r"$\hat{\mathbb{E}}\bigl[r_\text{eval}\bigr]$"
 }
-MAX_STEPS = 255
+MAX_STEPS = None
+zoomed_metrics = []
+if env_name ==  "double-integrator":
+    MAX_STEPS = 127
+    zoomed_metrics = [
+        "eval neg_cost(average)",
+        "neg_cost",
+    ]
+elif env_name == "cartpole":
+    MAX_STEPS = 255
+elif env_name == "quadcopter":
+    MAX_STEPS = 2048
+assert MAX_STEPS is not None, "MAX_STEPS should not be none"
 # -----------------------------------------
 
 api  = wandb.Api()                        # requires WANDB_API_KEY in env
@@ -60,22 +72,17 @@ df_baseline = pd.concat(dfs_baseline, ignore_index=True)
 penalty_values = df_baseline["constraint_penalty"].unique()
 
 num_plots = len(METRICS)
-num_cols = 3
+num_cols = 2
 num_rows = ceil(num_plots / num_cols)
 
 styles = [('-', 'o'), ('--', 's'), ('-.', '^'), (':', 'd')]
 penalties = sorted(penalty_values)
 colors = sns.color_palette(n_colors=len(penalties) + 1)
 
-fig, axes = plt.subplots(1, len(METRICS), figsize=(5*len(METRICS), 4))
-fig, axes = plt.subplots(num_rows, num_cols, figsize=(12, 6), sharex=True)
+fig, axes = plt.subplots(num_rows, num_cols, figsize=(12, 9), sharex=True)
 axes = axes.flatten()
-# zoomed_metrics = [
-#     "eval neg_cost(average)",
-#     "neg_cost",
-# ]
-zoomed_metrics = []
-errorbar = ("pi",95)
+# zoomed_metrics = []
+errorbar = ("pi",50)
 for ax, metric in zip(axes, METRICS):
     # baseline “HiPPO” curve
     sns.lineplot(
@@ -90,12 +97,8 @@ for ax, metric in zip(axes, METRICS):
     )
     if metric in zoomed_metrics:
         axins = zoomed_inset_axes(ax,
-            zoom=2.5,
+            zoom=5.0,
             loc='center right')
-        if metric not in ["neg_cost","eval neg_cost(average)"]:
-            axins = zoomed_inset_axes(ax,
-                    zoom=1.5,
-                    loc='center right')
         sns.lineplot(
             data=df_all, x="_step", y=metric,
             estimator="mean", errorbar=errorbar, linewidth=2,
@@ -114,7 +117,7 @@ for ax, metric in zip(axes, METRICS):
             x     = "_step",
             y     = metric,
             estimator="mean",
-            errorbar =("pi",95),
+            errorbar =errorbar,
             linewidth  = 2,
             label = rf"$\nu = {penalty}$",  # raw‐string latex
             legend = False,
@@ -129,7 +132,7 @@ for ax, metric in zip(axes, METRICS):
                     x     = "_step",
                     y     = metric,
                     estimator="mean",
-                    errorbar =("pi",95),
+                    errorbar =errorbar,
                     linewidth  = 2,
                     ax    = axins,
                     legend = False,
@@ -146,7 +149,7 @@ for ax, metric in zip(axes, METRICS):
             max_T = df_all[metric].max()
             axins.set_ylim(int(max_T*0.85),max_T)
         axins.set_ylabel("")
-        mark_inset(ax, axins, loc1=2, loc2=4, fc="none", ec="0.5")
+        mark_inset(ax, axins, loc1=3, loc2=1, fc="none", ec="0.5")
     ax.set_ylabel("")
     ax.yaxis.labelpad = 0
     ax.grid(True)
@@ -160,7 +163,7 @@ for ax in axes[num_plots:]:
     ax.remove()
 plt.tight_layout()
 plt.savefig(f"plots/{env_name}_aggregate_metrics.pdf")
-if env_name == "double_integrator":
+if env_name == "double-integrator":
     bellman_metrics = [
         "bellman_violation_mean",
         "bellman_violation_max",
@@ -181,7 +184,7 @@ if env_name == "double_integrator":
     for ax, metric in zip(axes, bellman_metrics):
         sns.lineplot(
             data=df_all, x="_step", y=metric,
-            estimator="mean", errorbar=("pi",95), linewidth=2,
+            estimator="mean", errorbar=errorbar, linewidth=2,
             ax=ax,
         )
         ax.set_title(rf"${bellman_metrics_to_latex.get(metric, metric)}$")
