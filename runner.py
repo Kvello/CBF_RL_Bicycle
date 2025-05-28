@@ -42,6 +42,12 @@ from utils.utils import get_config_value
 from warnings import warn
 import imageio
 import numpy as np
+import matplotlib as mpl
+
+mpl.rc('text', usetex=True)
+mpl.rc('font', family='serif')
+# (optional) add any LaTeX packages you need, e.g. amsmath
+mpl.rcParams['text.latex.preamble'] = r'\usepackage{amsmath}\usepackage{amsfonts}'
 
 ACTIVATION_MAP = {
     "relu": nn.ReLU(),
@@ -318,13 +324,13 @@ class Runner():
                                                 transforms=self.env.transform[:-1])
             X = mesh[0].reshape(bm_viol.shape)
             Y = mesh[1].reshape(bm_viol.shape)
-            plt.figure(figsize=(10, 10))
+            plt.figure(figsize=(5,5))
             # Better with contourf, or imshow or maybe surface plot or pcolormesh
             plt.contourf(X,Y,bm_viol,cmap="coolwarm")
             plt.colorbar()
             plt.title("Bellman violation")
-            plt.xlabel("x1")
-            plt.ylabel("x2")
+            plt.xlabel(r"$x_1$")
+            plt.ylabel(r"$x_2$")
             if wandb.run is not None:
                 wandb.log({"bellman_violation": wandb.Image(plt)})
             if wandb.run is None or self.args["save_locally"]:

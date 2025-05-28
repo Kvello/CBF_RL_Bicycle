@@ -24,6 +24,12 @@ from matplotlib.ticker import MaxNLocator
 from math import ceil
 from datetime import datetime
 import wandb
+import matplotlib as mpl
+
+mpl.rc('text', usetex=True)
+mpl.rc('font', family='serif')
+# (optional) add any LaTeX packages you need, e.g. amsmath
+mpl.rcParams['text.latex.preamble'] = r'\usepackage{amsmath}\usepackage{amsfonts}'
 
         
 class DoubleIntegratorEnv(EnvBase):
