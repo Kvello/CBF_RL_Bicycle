@@ -42,7 +42,7 @@ algorithm:
   secondary_reward_key: neg_cost #Ignored but plotted for PPO with performance objective only
   entropy_coef: 0.01
   loss_critic_type: smooth_l1
-  constraint_penalty: 10
+  constraint_penalty: 1
   optim_kwargs:
     lr: 1.0e-4
   scheduler:

@@ -426,13 +426,11 @@ class Runner():
                 "theta_ref": [],
                 "theta_dot_ref": [],
             }
-        input1 = []
         if self.args["env"]["name"] == "quadrotor":
             state_dict["z"] = []
             state_dict["z_dot"] = []
             reference_dict["z_ref"] = []
             reference_dict["z_dot_ref"] = []
-            input2 = []
         obs_key = self.args["env"]["cfg"]["obs_signals"][0] # Only one obs key in cartpole
         ref_key = self.args["env"]["cfg"]["ref_signals"][0] # Only one ref key in cartpole
         
@@ -444,22 +442,19 @@ class Runner():
         colors = plt.cm.tab10.colors 
         plt.figure(figsize=(10, 14))
         if self.args["env"]["name"] == "cartpole":
+            ax1 = plt.subplot(2, 2, 1)
+            ax2 = plt.subplot(2, 2, 2)
+            ax3 = plt.subplot(2, 2, 3)
+            ax4 = plt.subplot(2, 2, 4)
+            axs = [ax1, ax2, ax3, ax4]
+        elif self.args["env"]["name"] == "quadrotor":
             ax1 = plt.subplot(3, 2, 1)
             ax2 = plt.subplot(3, 2, 2)
             ax3 = plt.subplot(3, 2, 3)
             ax4 = plt.subplot(3, 2, 4)
             ax5 = plt.subplot(3, 2, 5)
-            axs = [ax1, ax2, ax3, ax4, ax5]
-        elif self.args["env"]["name"] == "quadrotor":
-            ax1 = plt.subplot(4, 2, 1)
-            ax2 = plt.subplot(4, 2, 2)
-            ax3 = plt.subplot(4, 2, 3)
-            ax4 = plt.subplot(4, 2, 4)
-            ax5 = plt.subplot(4, 2, 5)
-            ax6 = plt.subplot(4, 2, 6)
-            ax7 = plt.subplot(4, 2, 7)
-            ax8 = plt.subplot(4, 2, 8)
-            axs = [ax1, ax2, ax3, ax4, ax5, ax6, ax7, ax8]
+            ax6 = plt.subplot(3, 2, 6)
+            axs = [ax1, ax2, ax3, ax4, ax5, ax6]
         plot_num = 0
         for _ in range(num_frames):
             frame = env.render()
@@ -467,11 +462,6 @@ class Runner():
             with torch.no_grad():
                 td = policy_cpu(td)
             td = env.step(td)
-            if self.args["env"]["name"] == "quadrotor":
-                input1.append(td["action"][0])
-                input2.append(td["action"][1])
-            else:
-                input1.append(td["action"][0])
             td = step_mdp(td)
             for i, (s_key, r_key) in enumerate(zip(state_dict.keys(),reference_dict.keys())):
                 state_dict[s_key].append(td[obs_key][i])
@@ -487,14 +477,6 @@ class Runner():
                         ax.plot(reference_dict[r_key], color=color, linestyle="--")
                         state_dict[s_key] = []
                         reference_dict[r_key] = []
-                    if self.args["env"]["name"] == "quadrotor":
-                        ax7.plot(input1, color=color)
-                        ax8.plot(input2, color=color)
-                        input1 = []
-                        input2 = []
-                    else:
-                        ax5.plot(input1, color=color)
-                        input1 = []
         
         env.close()
         now = datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -511,7 +493,6 @@ class Runner():
             ax2.set_title(r"$\dot{x}$")
             ax3.set_title(r"$\theta$")
             ax4.set_title(r"$\dot{\theta}$")
-            ax5.set_title("Normalized action")
             ax1.set_xlabel("Step")
             ax1.set_ylabel(r"$[m]$")
             ax2.set_xlabel("Step")
@@ -520,7 +501,6 @@ class Runner():
             ax3.set_ylabel(r"$[\text{rad}]$")
             ax4.set_xlabel("Step")
             ax4.set_ylabel(r"$[\frac{\text{rad}}{s}]$")
-            ax5.set_xlabel("Step")
             plt.suptitle("Cartpole")
         if self.args["env"]["name"] == "quadrotor":
             ax1.set_title(r"$x$")
@@ -529,8 +509,6 @@ class Runner():
             ax4.set_title(r"$\dot{z}$")
             ax5.set_title(r"$\theta$")
             ax6.set_title(r"$\dot{\theta}$")
-            ax7.set_title("Normalized action 1")
-            ax8.set_title("Normalized action 2")
             ax1.set_xlabel("Step")
             ax1.set_ylabel(r"$[m]$")
             ax2.set_xlabel("Step")
@@ -543,8 +521,6 @@ class Runner():
             ax5.set_ylabel(r"$[\text{rad}]$")
             ax6.set_xlabel("Step")
             ax6.set_ylabel(r"$[\frac{\text{rad}}{s}]$")
-            ax7.set_xlabel("Step")
-            ax8.set_xlabel("Step")
             plt.suptitle("Quadrotor")
         plt.tight_layout()
         imageio.mimsave(video_path, frames, fps=fps)
