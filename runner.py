@@ -440,7 +440,13 @@ class Runner():
         num_frames = get_config_value(render_args, "num_frames", 1000, warn_str)
 
         colors = plt.cm.tab10.colors 
-        line_styles = ["-", "-.", ":", "-"]
+        line_styles = ["solid",
+                       (0, (1,5)), # dotted
+                       (0,(5,10)), #loosely dashed
+                       (0,(3,10,1,10)), # loosely dashdotted
+                       (0,(3,5,1,5,1,5)), # dashdotdotted
+                       (0,(3,10,1,10,1,10)) # loosely dashdotdotted
+                       ]
         plt.figure(figsize=(10, 14))
         if self.args["env"]["name"] == "cartpole":
             ax1 = plt.subplot(2, 2, 1)
