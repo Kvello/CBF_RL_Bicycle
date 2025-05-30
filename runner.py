@@ -440,13 +440,6 @@ class Runner():
         num_frames = get_config_value(render_args, "num_frames", 1000, warn_str)
 
         colors = plt.cm.tab10.colors 
-        line_styles = ["solid",
-                       (0, (1,5)), # dotted
-                       (0,(5,10)), #loosely dashed
-                       (0,(3,10,1,10)), # loosely dashdotted
-                       (0,(3,5,1,5,1,5)), # dashdotdotted
-                       (0,(3,10,1,10,1,10)) # loosely dashdotdotted
-                       ]
         plt.figure(figsize=(10, 14))
         if self.args["env"]["name"] == "cartpole":
             ax1 = plt.subplot(2, 2, 1)
@@ -478,10 +471,9 @@ class Runner():
                 td = env.reset()
                 if plot_num < len(colors):
                     color = colors[plot_num]
-                    ls = line_styles[plot_num % len(line_styles)]
                     plot_num += 1
                     for ax, s_key, r_key in zip(axs,state_dict.keys(),reference_dict.keys()):
-                        ax.plot(state_dict[s_key], color=color, linestyle=ls)
+                        ax.plot(state_dict[s_key], color=color)
                         ax.plot(reference_dict[r_key], color=color, linestyle="--")
                         state_dict[s_key] = []
                         reference_dict[r_key] = []
