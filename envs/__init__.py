@@ -137,34 +137,3 @@ try:
 except ImportError:
     print("Safe Control Gym not installed. Skipping Safe Control Gym environments.")
     pass
-def make_safety_gym_env(env_id: str, cfg: dict,device=torch.device("cpu")) -> EnvBase:
-    """Creates a Safety Gym environment.
-
-    Args:
-        env_id (str): The ID of the Safety Gym environment.
-        cfg (dict): Configuration dictionary.
-    Returns:
-        EnvBase: The Safety Gym environment.
-    """
-
-    base_env = SafetyGymEnv(env_id,
-            num_envs=cfg.get("num_parallel_env",1),
-            device=device,
-            done_on_violation=cfg.get("done_on_violation",True))
-    base_env.set_seed(cfg["seed"])
-    return TransformedEnv(
-        base_env,
-        StepCounter(max_steps=cfg["max_steps"])
-    ).to(device)
-
-try:
-    import safety_gym
-    from envs.safety_gym_envs import SafetyGymEnv
-    import gym
-    for env_id in gym.envs.registry:
-        if env_id.startswith("Safexp"):
-            # Register all Safety Gym environments
-            ENV_REGISTRY[env_id] = make_safety_gym_env
-except ImportError:
-    print("Safety Gym not installed. Skipping Safety Gym environments.")
-    pass
