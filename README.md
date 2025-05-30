@@ -46,7 +46,7 @@ envs/
 ```
 respectively.
 ## :hammer_and_wrench: Setup and dependencies
-This project depends on a working [Safe Control Gym](https://github.com/Kvello/safe-control-gym) installation, which is included as a submodule. To test on [Safety Gym](https://github.com/Kvello/safety-gym) environments, also a working [mujoco-py](https://github.com/openai/mujoco-py) installation is required. The [MuJoCo](https://mujoco.org/) binaries are included in the submodule. Follow the guide at [mujoco-py](https://github.com/openai/mujoco-py) for setting this up.
+This project depends on a working [Safe Control Gym](https://github.com/Kvello/safe-control-gym) installation, which is included as a submodule. 
 
 The requirements are listed in the requirements.txt file. Simply run
 ```bash
@@ -55,8 +55,7 @@ pip install -r requirements.txt
 preferably in a clean python environment. Python 3.10.16 was used.
 [Pyenv](https://github.com/pyenv/pyenv) or [nix](https://nixos.org/) is highly recommended for setting up the environment.
 Optionally any other (python) environment manager can be used.
-Unfortunately [Safety Gym](https://github.com/Kvello/safety-gym) requires older package versions than [Safe Control Gym](https://github.com/Kvello/safe-control-gym). It also requires an older python version (we used 3.9.21). The requirements for using [Safety Gym](https://github.com/Kvello/safety-gym) are listed in the requirements_safetygym.txt file. 
-In the respective python environment install [Safety Gym](https://github.com/Kvello/safety-gym) OR [Safe Control Gym](https://github.com/Kvello/safe-control-gym) in editable mode by navigating to the correct directory and running
+In the respective python environment install [Safe Control Gym](https://github.com/Kvello/safe-control-gym) in editable mode by navigating to the correct directory and running
 ```bash
 pip install -e .
 ```
@@ -102,7 +101,7 @@ optim_kwargs:
 }
 ```
 ## :pray: Acknowledgments
-* Safe Control Gym and Safety Gym projects
+* Safe Control Gym project
 * The [torchrl](https://docs.pytorch.org/rl/stable/index.html) project
 * Supervisors:
     1. Professor Dr. Konstantinos Alexis
