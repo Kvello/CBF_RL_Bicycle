@@ -14,10 +14,15 @@ mpl.rc('font', family='serif')
 # (optional) add any LaTeX packages you need, e.g. amsmath
 mpl.rcParams['text.latex.preamble'] = r'\usepackage{amsmath}\usepackage{amsfonts}'
 
+######################################
+# Change these to fit your setup
+######################################
 ENTITY   = "markus-kv1-ntnu"
-env_name = "double-integrator"
-PROJECT  = "hippo-"+env_name+"-aggregate"
+env_name = "quadrotor"
+PROJECT  = "s3po-"+env_name+"-aggregate"
 BASELINE_PROJECT = "ppo-penalty-"+env_name+"-aggregate"
+
+
 METRICS  = [
     "step_count(average)",
     "eval step_count(average)",
@@ -44,7 +49,7 @@ if env_name ==  "double-integrator":
     ]
 elif env_name == "cartpole":
     MAX_STEPS = 255
-elif env_name == "quadcopter":
+elif env_name == "quadrotor":
     MAX_STEPS = 2048
 assert MAX_STEPS is not None, "MAX_STEPS should not be none"
 # -----------------------------------------
@@ -84,11 +89,11 @@ axes = axes.flatten()
 # zoomed_metrics = []
 errorbar = ("pi",50)
 for ax, metric in zip(axes, METRICS):
-    # baseline “HiPPO” curve
+    # baseline “S3PO” curve
     sns.lineplot(
         data=df_all, x="_step", y=metric,
         estimator="mean", errorbar=errorbar, linewidth=2,
-        label=r"\text{HiPPO}",  # now also LaTeX
+        label=r"\text{S3PO}",  # now also LaTeX
         ax=ax,
         alpha=0.9,
         linestyle="-", markers="o",
@@ -124,7 +129,7 @@ for ax, metric in zip(axes, METRICS):
             ax    = ax,
             alpha=0.7,
             color=colors[i+1],marker=mk,linestyle=ls,
-            markevery=20
+            markevery=100
         )
         if metric in zoomed_metrics:
             sns.lineplot(

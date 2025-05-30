@@ -1,7 +1,7 @@
-wandb_project: "hippo-quadrotor"
+wandb_project: "s3po-cartpole"
 
 env:
-  name: quadrotor
+  name: cartpole
   gamma: 0.99
   # These arguments are passed to the environment constructor
   cfg:
@@ -10,33 +10,35 @@ env:
     ref_signals: ["ref"]
     full_obs_key: "observation_extended"
     safety_obs_key: "observation"
-    max_steps: 599 # < episode_len_sec*ctrl_freq
+    max_steps: 599 # < episode_len_sec*ctr_freq
     num_parallel_env: 8  #rule of thumb: <=frames_per_batch / max_steps
     params:
       max_input: 1.0
 models:
-  value_net:
-    name: feedforward
-    eps: 0.0
-    layers: [128, 64]
-    activation: relu
   cdf_net:
     name: feedforward
     eps: 1.0e-3
-    layers: [128, 64]
+    layers: [64, 64]
     activation: relu 
+
+  value_net:
+    name: feedforward
+    eps: 0.0
+    layers: [64, 64]
+    activation: relu
+
   policy_net:
     name: feedforward
-    layers: [128, 64]
+    layers: [64, 64]
     activation: relu
 
 algorithm:
-  name: hippo
+  name: s3po
   num_epochs: 10
   frames_per_batch: 8192   # 2**13
   sub_batch_size: 256      # 2**8
   max_grad_norm: 1.0
-  total_frames: 16777216    # 2**24
+  total_frames: 2097152     # 2**21
   clip_epsilon: 0.2
   lmbda1: 0.1
   lmbda2: 0.95
@@ -48,18 +50,18 @@ algorithm:
   entropy_coef: 0.001
   loss_critic_type: smooth_l1
   optim_kwargs:
-    lr: 1.0e-4
-  scheduler:
+    lr: 3.0e-4
+  scheduler: 
     name: cosine
-    eta_min: 5.0e-6
+    eta_min: 1.0e-6
     last_epoch: -1
 
+
 evaluation:
-  eval_steps: 1200
+  eval_steps: 3000
+  track_bellman_violation: false
 
 render:
   render: true
-  num_frames: 1800
+  num_frames: 3000
   fps : 30
-
-

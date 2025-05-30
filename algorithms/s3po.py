@@ -18,7 +18,7 @@ from torchrl.envs import (
 from .advantages.multi_GAE import MultiGAE
 from torchrl.objectives.value import ValueEstimatorBase
 from torchrl.envs.utils import ExplorationType
-from .losses.hippo_loss import HiPPOLoss
+from .losses.s3po_loss import S3POLoss
 from tqdm import tqdm
 import wandb
 from utils.utils import get_config_value
@@ -94,7 +94,7 @@ def gradient_projection(
             raise ValueError("NaN in combined gradient")
         return grad
 
-class HierarchicalPPO(PPO):
+class SafetyPrioritizingPPO(PPO):
     def __init__(self):
         super().__init__()
     def setup(self, config: Dict[str, Any]):
@@ -206,7 +206,7 @@ class HierarchicalPPO(PPO):
             warnings.warn("Value networks have the same output keys. This may cause issues.")
             
             
-        self.loss_module = HiPPOLoss(
+        self.loss_module = S3POLoss(
             actor=policy_module,
             primary_critic=V_primary,
             secondary_critic=V_secondary,

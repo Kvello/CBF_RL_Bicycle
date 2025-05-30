@@ -1,5 +1,5 @@
 wandb_project: "ppo-penalty-double-integrator-aggregate"
-config_file: hippo_double_integrator.yaml
+config_file: s3po_double_integrator.yaml
 weights_dir: /home/markus/Documents/CBF_RL_Bicycle/models/weights/
 policy_path: null
 value_path: null

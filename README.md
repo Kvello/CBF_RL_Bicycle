@@ -1,7 +1,7 @@
 # Certified Safe RL using DTBFs
 ## :rocket: Overview & Motivation
 
-Real-world RL applications require safety guarantees. HiPPO addresses this by:
+Real-world RL applications require safety guarantees. S3PO addresses this by:
 
 * **Decoupling** safety and performance into two MDPs.
 
@@ -18,13 +18,13 @@ cd Certified-Safe-RL-using-DTBFs
 # Set up Python environment
 pip install -r requirements.txt
 # Run training (double integrator)
-python runner.py train=True config_file=hippo_double_integrator.yaml
+python runner.py train=True config_file=s3po_double_integrator.yaml
 ```
 
-This repo contains the code used to develop, implement and test an algorithm for safe RL extending PPO. It decomposes the CMDP into two MDPs - one concerned with safety, and one concerned with performance - for which two separate value functions are learned. The policy gradient is updated using a projection algorithm. We call the resulting algorithm HiPPO. It can be shown formally that the value function associated with the safety preserving MDP is a Discrete Time Barrier Funciton, certifying safety of the learned policy after theoretical convergence.
+This repo contains the code used to develop, implement and test an algorithm for safe RL extending PPO. It decomposes the CMDP into two MDPs - one concerned with safety, and one concerned with performance - for which two separate value functions are learned. The policy gradient is updated using a projection algorithm. We call the resulting algorithm S3PO. It can be shown formally that the value function associated with the safety preserving MDP is a Discrete Time Barrier Funciton, certifying safety of the learned policy after theoretical convergence.
 ## :file_folder: Directory Structure
 ```bash
-├── algorithms/           # HiPPO implementation (algorithms/hippo.py)
+├── algorithms/           # S3PO implementation (algorithms/s3po.py)
 ├── envs/                 # Task & environment definitions
 ├── configs/              # YAML configs for training & eval
 ├── requirements.txt      # Core deps (Python 3.10.16)
@@ -36,9 +36,9 @@ This repo contains the code used to develop, implement and test an algorithm for
 └── README.md             # This file
 ```
 ## :bulb: Main contributions
-The main contributions of this work is the HiPPO algorithm and the task definitions found under
+The main contributions of this work is the S3PO algorithm and the task definitions found under
 ```bash
-algorithms/hippo.py
+algorithms/s3po.py
 ```
 and in
 ```bash
@@ -73,7 +73,7 @@ config/default.yaml
 ```
 for all the configuration options.
 ## :gear: Configuration Options
-All hyperparameters and flags live in separate yaml files in ```configs/```. Key HiPPO fields:
+All hyperparameters and flags live in separate yaml files in ```configs/```. Key S3PO fields:
 ```yaml
 num_epochs: 10          # number of opt. epochs per batch
 frames_per_batch: 8192  # Simulations steps(transitions) per batch
@@ -97,7 +97,7 @@ optim_kwargs:
   title     = {Certified Safe Reinforcement Learning using Discrete‐Time Barrier Functions},
   school    = {Norwegian University of Science and Technology},
   year      = {2025},
-  url       = {https://github.com/Kvello/safe-rl-hippo},
+  url       = {https://github.com/Kvello/safe-rl-s3po},
 }
 ```
 ## :pray: Acknowledgments

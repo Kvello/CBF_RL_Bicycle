@@ -1,5 +1,5 @@
 
-wandb_project: "hippo-point-goal1"
+wandb_project: "s3po-point-goal1"
 
 env:
   name: Safexp-PointGoal1-v0
@@ -32,7 +32,7 @@ models:
     activation: relu
 
 algorithm:
-  name: hippo
+  name: s3po
   num_epochs: 10
   frames_per_batch: 32768   # 2**15
   sub_batch_size: 256      # 2**8

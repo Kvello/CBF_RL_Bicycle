@@ -1,4 +1,4 @@
-from algorithms.hippo import HierarchicalPPO as HiPPO
+from algorithms.s3po import SafetyPrioritizingPPO as S3PO
 from algorithms.ppo import PPO
 from typing import Dict, Any
 from torchrl.data.replay_buffers import TensorDictReplayBuffer
@@ -69,8 +69,8 @@ class Runner():
     def train(self):
         if self.args == None:
             raise ValueError("Setup the runner before training")
-        if self.args["algorithm"]["name"] == "hippo":
-            ppo_entity = HiPPO()
+        if self.args["algorithm"]["name"] == "s3po":
+            ppo_entity = S3PO()
             algo_args = self.args["algorithm"]
             algo_args["device"] = self.device
             algo_args["gamma"] = self.args["env"]["gamma"]
@@ -105,7 +105,7 @@ class Runner():
             # scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
             #     optim, args["total_frames"] // args["frames_per_batch"], 1e-8
             # )
-            if self.args["algorithm"]["name"] == "hippo":
+            if self.args["algorithm"]["name"] == "s3po":
                 ppo_entity.train(
                     policy_module=self.policy_module,
                     V_primary=self.cdf_module,

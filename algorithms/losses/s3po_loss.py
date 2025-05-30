@@ -6,7 +6,7 @@ import torch
 from torchrl.collectors.utils import split_trajectories
 
 #TODO: Allow for modifiable tensordict keys in loss functions
-class HiPPOLoss(LossModule):
+class S3POLoss(LossModule):
     def __init__(
         self,
         actor: ProbabilisticTensorDictSequential,
@@ -135,7 +135,7 @@ class HiPPOLoss(LossModule):
         tensordict: TensorDictBase,
     ) -> TensorDictBase:
         """
-        Calculate the primary objective loss for the HiPPO algorithm.
+        Calculate the primary objective loss for the S3PO algorithm.
 
         Args:
             tensordict (TensorDictBase): The input tensor dictionary containing all
