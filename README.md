@@ -1,4 +1,4 @@
-# Certified Safe RL using DTBFs
+# Safety Prioritizing Policy Optimization via DTBFs
 ## :rocket: Overview & Motivation
 
 Real-world RL applications require safety guarantees. S3PO addresses this by:
