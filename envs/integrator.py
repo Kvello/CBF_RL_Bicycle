@@ -436,9 +436,8 @@ def plot_value_function_integrator(max_x1:float, max_x2:float,
     ax.set_xlim(-max_x1*1.1, max_x1*1.1)
     ax.set_ylim(-max_x2*1.1, max_x2*1.1)
    
-    ax.set_xlabel("x1")
-    ax.set_ylabel("x2")
-    ax.set_zlabel("Value function") 
+    ax.set_xlabel(r"$x_1$")
+    ax.set_ylabel(r"$x_2$")
     ax.set_title("Value function landscape")
     fig.colorbar(surf)
     if wandb.run is not None:
