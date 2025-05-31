@@ -429,10 +429,6 @@ def plot_value_function_integrator(max_x1:float, max_x2:float,
     ax = fig.add_subplot(111, projection='3d')
     
     surf = ax.plot_surface(mesh[0],mesh[1],outputs,cmap='coolwarm')
-    ax.plot([-max_x1, -max_x1], [-max_x2, max_x2],[0,0], "r")
-    ax.plot([max_x1, max_x1], [-max_x2, max_x2],[0,0], "r")
-    ax.plot([-max_x1, max_x1], [-max_x2, -max_x2],[0,0], "r")
-    ax.plot([-max_x1, max_x1], [max_x2, max_x2], [0,0],"r")
     ax.set_xlim(-max_x1*1.1, max_x1*1.1)
     ax.set_ylim(-max_x2*1.1, max_x2*1.1)
    
