@@ -94,7 +94,7 @@ optim_kwargs:
 ```latex
 @mastersthesis{Kvello2025,
   author    = {Markus Kvello},
-  title     = {Certified Safe Reinforcement Learning using Discrete‐Time Barrier Functions},
+  title     = {Safety Prioritizing Policy Optimization via Discrete-Time Barrier Functions},
   school    = {Norwegian University of Science and Technology},
   year      = {2025},
   url       = {https://github.com/Kvello/safe-rl-s3po},
